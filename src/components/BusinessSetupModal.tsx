@@ -28,14 +28,14 @@ export const BusinessSetupModal: React.FC = () => {
   };
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center p-4 bg-[#1C3529]/55">
-      <div className="w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-xl p-6 md:p-8">
-        <div className="flex items-center justify-between gap-4 mb-5">
+    <div className="absolute inset-0 z-30 flex items-center justify-center p-2.5 sm:p-4 bg-[#1C3529]/55">
+      <div className="w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-xl p-4 sm:p-6 md:p-8">
+        <div className="flex items-center justify-between gap-3 mb-4 sm:mb-5">
           <div>
             <div className="text-xs font-semibold text-[#6E9B72]">
               {t(language, 'Business Registration', 'Registrasi Usaha Baru')}
             </div>
-            <h2 className="font-display text-2xl font-bold text-[#244D3B]">
+            <h2 className="font-display text-xl sm:text-2xl font-bold text-[#244D3B]">
               {t(language, 'Establish Your Dimsum Outlet', 'Dirikan Outlet Dimsum Kamu')}
             </h2>
           </div>

@@ -41,6 +41,7 @@ import type { JoystickInputRef } from '../game/DimsumWorldCanvas';
 import { STATION_META, TUTORIAL_LABELS, t } from '../i18n/translations';
 import { useGameStore } from '../store/useGameStore';
 import type { StationId } from '../types/game';
+import { useViewportMode } from '../utils/useViewportMode';
 import { DailyMissionsDashboard, DailyMissionsModal } from './DailyMissionsDashboard';
 
 interface GameHudProps {
@@ -98,8 +99,14 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
     return () => window.clearInterval(id);
   }, [activeDelegation, gameState, completeDelegatedCooking]);
 
-  const isCompactViewport =
-    typeof window !== 'undefined' && window.innerWidth > 0 && window.innerWidth < 640;
+  const {
+    width: viewportWidth,
+    isTouchDevice,
+    isMobilePortrait,
+    isShortLandscape,
+    isCompactViewport,
+  } = useViewportMode();
+
   const [compactHud, setCompactHud] = useState(isCompactViewport);
   const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [showQuickBar, setShowQuickBar] = useState(true);
@@ -109,6 +116,16 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
   const [showEventDetails, setShowEventDetails] = useState(!isCompactViewport);
   const joyOriginRef = useRef<{ x: number; y: number } | null>(null);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    setCompactHud(isCompactViewport);
+    setShowMissionsWidget(!isCompactViewport);
+    setShowGoalsWidget(!isCompactViewport);
+    setShowEventDetails(!isCompactViewport);
+  }, [isCompactViewport]);
+
+  const showJoystick =
+    isTouchDevice || isMobilePortrait || isShortLandscape || viewportWidth < 768;
 
   const toggleCompactHud = () => {
     const nextCompact = !compactHud;
@@ -200,7 +217,7 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
 
   const handleJoystickMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!joyOriginRef.current) return;
-    const maxR = 32;
+    const maxR = isShortLandscape ? 24 : 32;
     const dxRaw = e.clientX - joyOriginRef.current.x;
     const dyRaw = e.clientY - joyOriginRef.current.y;
     const dist = Math.hypot(dxRaw, dyRaw);
@@ -235,12 +252,16 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
   ];
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between gap-2 p-3 md:p-5 overflow-hidden">
+    <div
+      className={`pointer-events-none absolute inset-0 z-10 flex flex-col justify-between overflow-hidden ${
+        isShortLandscape ? 'gap-1 p-2' : 'gap-2 p-3 md:p-5'
+      }`}
+    >
       {/* TOP PERIMETER HUD */}
       <div className="flex-1 min-h-0 flex items-start justify-between gap-2">
-        <div className="flex flex-col items-start gap-2 min-w-0 max-h-full">
+        <div className="flex flex-col items-start gap-1.5 min-w-0 max-h-full">
           {/* Top-Left Toggle Button + Business Metrics Strip */}
-          <div className="flex flex-wrap items-start gap-2 shrink-0">
+          <div className="flex flex-wrap items-start gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={() => setShowLeftPanel((v) => !v)}
@@ -271,10 +292,16 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
 
             {/* Business Metrics Strip */}
             {showLeftPanel && (
-              <div className="pointer-events-auto flex flex-wrap items-center gap-3 md:gap-5 px-4 py-2.5 rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-sm text-xs md:text-sm">
+              <div
+                className={`pointer-events-auto flex flex-wrap items-center rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-sm ${
+                  isShortLandscape
+                    ? 'gap-2 px-2.5 py-1.5 text-[11px]'
+                    : 'gap-3 md:gap-5 px-3 sm:px-4 py-2 sm:py-2.5 text-xs md:text-sm'
+                }`}
+              >
                 <div>
                   <span className="text-[#587567] font-medium">{business.name}</span>
-                  <span className="mx-2 text-[#244D3B]/30">·</span>
+                  <span className="mx-1.5 sm:mx-2 text-[#244D3B]/30">·</span>
                   <span className="font-bold text-[#244D3B] tabular-nums">
                     {t(language, `Day ${currentDay}`, `Hari ${currentDay}`)}
                   </span>
@@ -359,14 +386,24 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
           </div>
 
           {showLeftPanel && (
-            <div className="flex flex-col items-start gap-2 max-h-[38vh] sm:max-h-none flex-1 min-h-0 overflow-y-auto pr-1">
+            <div
+              className={`flex flex-col items-start gap-2 flex-1 min-h-0 overflow-y-auto pr-1 ${
+                isShortLandscape
+                  ? 'max-h-[calc(100vh-140px)]'
+                  : isMobilePortrait
+                    ? 'max-h-[38vh]'
+                    : 'max-h-[45vh] md:max-h-none'
+              }`}
+            >
               {/* Weekly Festival / Rival Telemetry Card */}
               {(() => {
                 const nextFest = getNextUpcomingFestival(currentDay);
                 const playerSharePct = Math.max(0, 100 - rivalShop.marketSharePct);
                 return (
                   <div
-                    className={`pointer-events-auto w-68 sm:w-80 rounded-xl border shadow-sm px-3.5 py-2 text-xs space-y-1 ${
+                    className={`pointer-events-auto rounded-xl border shadow-sm px-3.5 py-2 text-xs space-y-1 ${
+                      isShortLandscape ? 'w-60 sm:w-68' : 'w-68 sm:w-80'
+                    } ${
                       activeFestival
                         ? 'bg-[#FFF3DC] border-[#ED9B53]'
                         : 'bg-[#FAF5EA] border-[#244D3B]/15'
@@ -412,7 +449,9 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
               {/* Daily Event Banner */}
               {activeDailyEvent && (
             <div
-              className={`pointer-events-auto w-68 sm:w-80 rounded-xl border shadow-sm px-3.5 py-2.5 text-xs ${
+              className={`pointer-events-auto rounded-xl border shadow-sm px-3.5 py-2 text-xs ${
+                isShortLandscape ? 'w-60 sm:w-68' : 'w-68 sm:w-80'
+              } ${
                 activeDailyEvent.kind === 'positive'
                   ? 'bg-[#EEF5E6] border-[#6E9B72]'
                   : 'bg-[#FEF3EC] border-[#DC2626]/40'
@@ -488,7 +527,11 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
           />
 
           {/* Daily Goals & Highlighted Bonus Objectives Widget */}
-          <div className="pointer-events-auto w-68 sm:w-80 rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-sm px-3.5 py-2.5 text-xs">
+          <div
+            className={`pointer-events-auto rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-sm px-3.5 py-2.5 text-xs ${
+              isShortLandscape ? 'w-60 sm:w-68' : 'w-68 sm:w-80'
+            }`}
+          >
             <button
               type="button"
               onClick={() => setShowGoalsWidget((v) => !v)}
@@ -823,27 +866,44 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
 
       {/* BOTTOM CONTROLS: Mobile Floating Joystick + Contextual Interact + Quick Station Dock */}
       <div className="relative flex flex-col items-center gap-2 shrink-0">
-        {/* Virtual Joystick for touch / mobile viewports (positioned cleanly at bottom-left above dock) */}
-        <div
-          onPointerDown={handleJoystickStart}
-          onPointerMove={handleJoystickMove}
-          onPointerUp={handleJoystickEnd}
-          onPointerCancel={handleJoystickEnd}
-          className="pointer-events-auto md:hidden fixed bottom-28 left-3 z-20 w-20 h-20 rounded-full bg-[#FAF5EA]/90 border-2 border-[#244D3B]/30 touch-none flex items-center justify-center shadow-sm"
-          aria-label="Movement Joystick"
-        >
+        {/* Virtual Joystick for touch / mobile portrait & short-landscape viewports */}
+        {showJoystick && (
           <div
-            className="w-9 h-9 rounded-full bg-[#244D3B] shadow"
-            style={{ transform: `translate(${joyKnob.x}px, ${joyKnob.y}px)` }}
-          />
-        </div>
+            data-testid="virtual-joystick"
+            onPointerDown={handleJoystickStart}
+            onPointerMove={handleJoystickMove}
+            onPointerUp={handleJoystickEnd}
+            onPointerCancel={handleJoystickEnd}
+            className={`pointer-events-auto fixed z-20 rounded-full bg-[#FAF5EA]/90 border-2 border-[#244D3B]/30 touch-none flex items-center justify-center shadow-sm ${
+              isShortLandscape
+                ? 'bottom-2 left-2 w-16 h-16'
+                : 'bottom-32 left-3 w-20 h-20'
+            }`}
+            aria-label="Movement Joystick"
+          >
+            <div
+              className={`rounded-full bg-[#244D3B] shadow ${
+                isShortLandscape ? 'w-7 h-7' : 'w-9 h-9'
+              }`}
+              style={{ transform: `translate(${joyKnob.x}px, ${joyKnob.y}px)` }}
+            />
+          </div>
+        )}
 
         {/* Center Contextual Interaction + Collapsible Quick Station Dock */}
-        <div className="w-full flex flex-col items-center gap-2">
+        <div
+          className={`w-full flex flex-col items-center ${
+            isShortLandscape ? 'gap-1 pl-[72px] pr-[174px]' : 'gap-2'
+          }`}
+        >
           {nearestMeta && nearestStation && !activeStation && (
             <button
               onClick={() => openStation(nearestStation)}
-              className="pointer-events-auto inline-flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl bg-[#ED9B53] hover:bg-[#DF883D] text-[#1C3529] text-xs sm:text-sm font-bold shadow-md transition-transform active:scale-95 cursor-pointer max-w-full truncate"
+              className={`pointer-events-auto inline-flex items-center gap-2 rounded-xl bg-[#ED9B53] hover:bg-[#DF883D] text-[#1C3529] font-bold shadow-md transition-transform active:scale-95 cursor-pointer max-w-full truncate ${
+                isShortLandscape
+                  ? 'px-3 py-1 text-[11px]'
+                  : 'px-4 py-2 sm:px-5 sm:py-2.5 text-xs sm:text-sm'
+              }`}
             >
               <span className="truncate">
                 [E] {language === 'id' ? nearestMeta.nameId : nearestMeta.nameEn} —{' '}
@@ -855,7 +915,11 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
           <div className="pointer-events-auto flex flex-col items-center max-w-full">
             <button
               onClick={() => setShowQuickBar((v) => !v)}
-              className="mb-1 px-3 py-0.5 rounded-t-lg bg-[#244D3B] text-[#FAF5EA] text-[11px] font-semibold cursor-pointer whitespace-nowrap"
+              className={`px-3 rounded-t-lg bg-[#244D3B] text-[#FAF5EA] font-semibold cursor-pointer whitespace-nowrap ${
+                isShortLandscape
+                  ? 'mb-0.5 py-0.5 text-[10px]'
+                  : 'mb-1 py-0.5 text-[11px]'
+              }`}
             >
               {showQuickBar
                 ? t(language, 'Hide Quick Dock', 'Sembunyikan Pintasan')
@@ -863,12 +927,23 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
             </button>
 
             {showQuickBar && (
-              <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-2 rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-md max-w-full">
+              <div
+                data-testid="quick-station-dock"
+                className={`flex flex-wrap items-center justify-center rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-md max-w-full ${
+                  isShortLandscape
+                    ? 'gap-1 px-1.5 py-1'
+                    : 'gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-2'
+                }`}
+              >
                 {quickStations.map((st) => (
                   <button
                     key={st.id}
                     onClick={() => openStation(st.id)}
-                    className={`inline-flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                    className={`inline-flex items-center rounded-lg font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                      isShortLandscape
+                        ? 'gap-1 px-1.5 py-1 text-[10px]'
+                        : 'gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-xs'
+                    } ${
                       activeStation === st.id
                         ? 'bg-[#244D3B] text-white'
                         : st.id === 'cashier' && cashierAlertCount > 0

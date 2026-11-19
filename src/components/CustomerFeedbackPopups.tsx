@@ -14,7 +14,7 @@ export const CustomerFeedbackPopups: React.FC = () => {
 
   return (
     <div
-      className="pointer-events-none fixed top-20 right-3 md:right-5 z-40 flex flex-col items-end gap-2.5 max-w-[calc(100vw-1.5rem)]"
+      className="pointer-events-none fixed top-20 [@media(max-height:520px)]:top-14 right-3 md:right-5 z-40 flex flex-col items-end gap-2 max-w-[calc(100vw-1.5rem)]"
       aria-live="polite"
     >
       {feedbackPopups.map((fb) => {
@@ -26,7 +26,7 @@ export const CustomerFeedbackPopups: React.FC = () => {
         return (
           <div
             key={fb.id}
-            className={`pointer-events-auto w-72 sm:w-80 rounded-xl bg-[#FAF5EA] shadow-lg border-2 p-3 text-xs transition-all ${
+            className={`pointer-events-auto w-72 sm:w-80 [@media(max-height:520px)]:w-64 rounded-xl bg-[#FAF5EA] shadow-lg border-2 p-2.5 sm:p-3 text-xs transition-all ${
               fb.sentiment === 'positive'
                 ? 'border-[#6E9B72]'
                 : fb.sentiment === 'negative'

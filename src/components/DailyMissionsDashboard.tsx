@@ -78,7 +78,7 @@ export const DailyMissionsDashboard: React.FC<DailyMissionsDashboardProps> = ({
     return (
       <div
         data-testid="daily-missions-card"
-        className="pointer-events-auto w-68 sm:w-80 rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-sm px-3.5 py-2.5 text-xs"
+        className="pointer-events-auto w-68 sm:w-80 [@media(max-height:520px)]:w-60 [@media(max-height:520px)]:sm:w-68 rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-sm px-3.5 py-2.5 text-xs"
       >
         <div className="flex items-center justify-between gap-2">
           <button
@@ -384,13 +384,13 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-40 bg-[#1B3A2C]/55 backdrop-blur-xs flex items-center justify-center p-4"
+      className="fixed inset-0 z-40 bg-[#1B3A2C]/55 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label={t(language, 'Daily Missions Dashboard', 'Dasbor Misi Harian')}
     >
-      <div className="w-full max-w-4xl max-h-[90vh] rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-xl flex flex-col overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#244D3B]/15 bg-[#F6EBD4] flex items-center justify-between gap-4">
+      <div className="w-full max-w-4xl max-h-[92vh] rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-xl flex flex-col overflow-hidden">
+        <div className="px-4 py-2.5 sm:px-5 sm:py-4 border-b border-[#244D3B]/15 bg-[#F6EBD4] flex items-center justify-between gap-4 shrink-0">
           <div className="min-w-0">
             <h2 className="text-base sm:text-lg font-bold text-[#244D3B] truncate">
               {t(language, 'Daily Missions Dashboard', 'Dasbor Misi Harian')}
@@ -409,7 +409,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
           </button>
         </div>
 
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-3">
+        <div className="p-3 sm:p-5 overflow-y-auto space-y-3">
           <DailyMissionsDashboard variant="dashboard" />
         </div>
       </div>

@@ -28,12 +28,12 @@ export const TitleScreen: React.FC = () => {
   }, [hasSavedGame, continueSavedGame, goToBusinessSetup]);
 
   return (
-    <div className="absolute inset-0 z-20 flex flex-col justify-between p-6 md:p-10 pointer-events-none">
+    <div className="absolute inset-0 z-20 flex flex-col justify-between gap-3 p-4 sm:p-6 md:p-10 [@media(max-height:520px)]:p-3 overflow-y-auto pointer-events-none">
       {/* Top minimal utility strip */}
-      <div className="flex items-center justify-end gap-2 pointer-events-auto">
+      <div className="flex items-center justify-end gap-2 shrink-0 pointer-events-auto">
         <button
           onClick={toggleLanguage}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#FAF5EA] border border-[#244D3B]/20 text-xs font-semibold text-[#244D3B] hover:bg-[#D9E8C8] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-lg bg-[#FAF5EA] border border-[#244D3B]/20 text-xs font-semibold text-[#244D3B] hover:bg-[#D9E8C8] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           aria-label="Toggle Language"
         >
           <Globe className="w-3.5 h-3.5" />
@@ -41,7 +41,7 @@ export const TitleScreen: React.FC = () => {
         </button>
         <button
           onClick={toggleMute}
-          className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-[#FAF5EA] border border-[#244D3B]/20 text-[#244D3B] hover:bg-[#D9E8C8] transition-colors cursor-pointer"
+          className="inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-[#FAF5EA] border border-[#244D3B]/20 text-[#244D3B] hover:bg-[#D9E8C8] transition-colors cursor-pointer"
           aria-label="Toggle Audio"
         >
           {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
@@ -49,9 +49,9 @@ export const TitleScreen: React.FC = () => {
       </div>
 
       {/* Left-aligned Title Lockup leaving right/center 3D diorama visible */}
-      <div className="max-w-lg rounded-2xl bg-[#FAF5EA]/95 border border-[#244D3B]/15 p-7 md:p-9 shadow-lg pointer-events-auto">
+      <div className="max-w-lg rounded-2xl bg-[#FAF5EA]/95 border border-[#244D3B]/15 p-5 sm:p-7 md:p-9 [@media(max-height:520px)]:p-4 shadow-lg pointer-events-auto">
         {/* Bespoke inline SVG Dimsum Steamer Emblem */}
-        <div className="flex items-center gap-4 mb-5">
+        <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-5 [@media(max-height:520px)]:mb-2.5">
           <svg
             width="56"
             height="56"
@@ -59,7 +59,7 @@ export const TitleScreen: React.FC = () => {
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
             aria-hidden="true"
-            className="shrink-0"
+            className="w-11 h-11 sm:w-14 sm:h-14 [@media(max-height:520px)]:w-10 [@media(max-height:520px)]:h-10 shrink-0"
           >
             <circle cx="32" cy="32" r="30" fill="#D9E8C8" stroke="#244D3B" strokeWidth="2.5" />
             <path
@@ -81,16 +81,16 @@ export const TitleScreen: React.FC = () => {
             <path d="M16 38C16 41.5 23.2 44 32 44C40.8 44 48 41.5 48 38" stroke="#244D3B" strokeWidth="1.8" />
           </svg>
           <div>
-            <div className="text-xs font-semibold text-[#6E9B72] tracking-wide">
+            <div className="text-[11px] sm:text-xs font-semibold text-[#6E9B72] tracking-wide">
               {t(language, 'Healthy Dimsum Business Simulator', 'Simulasi Bisnis Dimsum Sehat')}
             </div>
-            <h1 className="font-display text-3xl md:text-4xl font-bold text-[#244D3B] tracking-tight leading-tight">
+            <h1 className="font-display text-2xl sm:text-3xl md:text-4xl [@media(max-height:520px)]:text-2xl font-bold text-[#244D3B] tracking-tight leading-tight">
               Dimsumpreneur
             </h1>
           </div>
         </div>
 
-        <p className="text-sm md:text-base text-[#355446] leading-relaxed mb-6">
+        <p className="text-xs sm:text-sm md:text-base [@media(max-height:520px)]:text-xs text-[#355446] leading-relaxed mb-4 sm:mb-6 [@media(max-height:520px)]:mb-3">
           {t(
             language,
             'Source fresh ingredients, master four-stage dimsum crafting, inspect quality, serve neighborhood guests, and grow your culinary ledger from Rp150.000–Rp500.000 starting capital.',
@@ -98,11 +98,11 @@ export const TitleScreen: React.FC = () => {
           )}
         </p>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
           {hasSavedGame && (
             <button
               onClick={continueSavedGame}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#ED9B53] hover:bg-[#DF883D] text-[#1C3529] font-semibold text-sm shadow-sm transition-transform active:scale-[0.98] whitespace-nowrap cursor-pointer"
+              className="inline-flex items-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 [@media(max-height:520px)]:py-2 rounded-xl bg-[#ED9B53] hover:bg-[#DF883D] text-[#1C3529] font-semibold text-xs sm:text-sm shadow-sm transition-transform active:scale-[0.98] whitespace-nowrap cursor-pointer"
             >
               <Play className="w-4 h-4 fill-current" />
               <span>{t(language, 'Continue Business', 'Lanjutkan Bisnis')}</span>
@@ -110,7 +110,7 @@ export const TitleScreen: React.FC = () => {
           )}
           <button
             onClick={goToBusinessSetup}
-            className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-transform active:scale-[0.98] whitespace-nowrap cursor-pointer ${
+            className={`inline-flex items-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 [@media(max-height:520px)]:py-2 rounded-xl font-semibold text-xs sm:text-sm transition-transform active:scale-[0.98] whitespace-nowrap cursor-pointer ${
               hasSavedGame
                 ? 'bg-[#244D3B] hover:bg-[#1B3A2C] text-white'
                 : 'bg-[#ED9B53] hover:bg-[#DF883D] text-[#1C3529] shadow-sm'
@@ -123,8 +123,8 @@ export const TitleScreen: React.FC = () => {
       </div>
 
       {/* Single flat control-hint line */}
-      <div className="text-center pointer-events-none">
-        <span className="inline-block px-4 py-1.5 rounded-lg bg-[#244D3B]/90 text-[#F6EBD4] text-xs font-medium tracking-wide">
+      <div className="text-center shrink-0 pointer-events-none">
+        <span className="inline-block px-3 py-1 sm:px-4 sm:py-1.5 rounded-lg bg-[#244D3B]/90 text-[#F6EBD4] text-[11px] sm:text-xs font-medium tracking-wide">
           {t(
             language,
             'WASD / Arrows Move · E / Click Interact · Esc Pause · Enter Start',

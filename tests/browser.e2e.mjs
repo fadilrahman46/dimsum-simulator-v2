@@ -42,7 +42,13 @@ async function waitForServer(url, serverProc, timeoutMs = 25_000) {
   throw new Error(`Timed out waiting for Vite server at ${url}`);
 }
 
-async function auditViewportLayout(page, label, width, height) {
+function rectsOverlap(a, b) {
+  if (!a || !b) return false;
+  return !(a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1);
+}
+
+async function auditViewportLayout(page, label, width, height, opts = {}) {
+  const { expectRotateOverlay = false, expectJoystick = false } = opts;
   await page.setViewportSize({ width, height });
   await page
     .waitForFunction(
@@ -57,6 +63,21 @@ async function auditViewportLayout(page, label, width, height) {
     )
     .catch(() => {});
   await page.waitForTimeout(250);
+
+  if (expectRotateOverlay) {
+    const rotateOverlay = page.getByTestId('rotate-to-landscape-overlay');
+    const visible = await rotateOverlay.isVisible().catch(() => false);
+    if (visible) {
+      await page.getByTestId('continue-portrait-btn').click();
+      await page.waitForTimeout(150);
+    }
+  } else {
+    const rotateVisible = await page
+      .getByTestId('rotate-to-landscape-overlay')
+      .isVisible()
+      .catch(() => false);
+    assert.equal(rotateVisible, false, `[${label}] Rotate-to-Landscape overlay must hide in non-portrait viewport`);
+  }
 
   const metrics = await page.evaluate(() => {
     const vw = window.innerWidth;
@@ -75,6 +96,10 @@ async function auditViewportLayout(page, label, width, height) {
       /Hide Quick Dock|Show Quick Dock|Pintasan/i.test(b.textContent || ''),
     );
     const zoomBtn = document.querySelector('button[aria-label="Zoom In"], button[aria-label="Perbesar Kamera"]');
+    const joyEl = document.querySelector('[data-testid="virtual-joystick"]');
+    const quickDock = document.querySelector('[data-testid="quick-station-dock"]');
+    const cameraBar = document.querySelector('[data-testid="camera-controls-bar"]');
+    const leftScrollBox = document.querySelector('[data-testid="daily-missions-card"]')?.parentElement;
 
     const checkBox = (el) => {
       if (!el) return null;
@@ -107,6 +132,10 @@ async function auditViewportLayout(page, label, width, height) {
       hidePanelBtn: checkBox(hidePanelBtn),
       quickDockBtn: checkBox(quickDockBtn),
       zoomBtn: checkBox(zoomBtn),
+      joystick: checkBox(joyEl),
+      quickDock: checkBox(quickDock),
+      cameraBar: checkBox(cameraBar),
+      leftScrollBox: checkBox(leftScrollBox),
     };
   });
 
@@ -120,6 +149,25 @@ async function auditViewportLayout(page, label, width, height) {
   assert.ok(metrics.quickDockBtn?.inViewport, `[${label}] Quick Dock toggle clipped: ${JSON.stringify(metrics.quickDockBtn)}`);
   assert.ok(metrics.zoomBtn?.inViewport, `[${label}] 3D Camera Zoom control clipped: ${JSON.stringify(metrics.zoomBtn)}`);
 
+  if (expectJoystick) {
+    assert.ok(metrics.joystick?.inViewport, `[${label}] Touch joystick must be visible inside viewport: ${JSON.stringify(metrics.joystick)}`);
+    assert.equal(
+      rectsOverlap(metrics.joystick, metrics.leftScrollBox),
+      false,
+      `[${label}] Joystick overlaps Left Panel (${JSON.stringify(metrics.joystick)} vs ${JSON.stringify(metrics.leftScrollBox)})`,
+    );
+    assert.equal(
+      rectsOverlap(metrics.joystick, metrics.quickDock),
+      false,
+      `[${label}] Joystick overlaps Quick Dock (${JSON.stringify(metrics.joystick)} vs ${JSON.stringify(metrics.quickDock)})`,
+    );
+  }
+  assert.equal(
+    rectsOverlap(metrics.cameraBar, metrics.quickDock),
+    false,
+    `[${label}] Camera bar overlaps Quick Dock (${JSON.stringify(metrics.cameraBar)} vs ${JSON.stringify(metrics.quickDock)})`,
+  );
+
   // Verify Left Panel Toggle cleanly hides & restores left panel (including Daily Missions & Daily Goals)
   await page.getByRole('button', { name: /Hide Left Panel/i }).click();
   await page.waitForTimeout(150);
@@ -132,7 +180,7 @@ async function auditViewportLayout(page, label, width, height) {
   assert.ok(afterShowText.includes('Daily Goals'), `[${label}] Left panel should reappear when toggled`);
   assert.ok(afterShowText.includes('Daily Missions'), `[${label}] Daily Missions should reappear when toggled`);
 
-  // Open a modal at this viewport and assert it stays inside viewport bounds
+  // Open Market modal at this viewport and assert it stays inside viewport bounds
   await page.getByRole('button', { name: /^Market$/i }).click();
   await page.waitForTimeout(200);
   const modalBox = await page.evaluate(() => {
@@ -150,7 +198,7 @@ async function auditViewportLayout(page, label, width, height) {
   });
   assert.ok(modalBox, `[${label}] Market modal dialog not found`);
   assert.ok(
-    modalBox.left >= -2 && modalBox.right <= width + 2 && modalBox.bottom <= height + 2,
+    modalBox.left >= -2 && modalBox.top >= -2 && modalBox.right <= width + 2 && modalBox.bottom <= height + 2,
     `[${label}] Modal overflowed viewport ${width}x${height}: ${JSON.stringify(modalBox)}`,
   );
   await page.keyboard.press('Escape');
@@ -231,6 +279,34 @@ async function runBrowserQa() {
     const canvasShot = await page.locator('[data-testid="dimsum-world-canvas"] canvas').screenshot();
     assert.ok(canvasShot.byteLength > 8_000, '3D canvas screenshot must contain rendered geometry');
 
+    // 1b. Verify TitleScreen Rotate-to-Landscape prompt in Mobile Portrait & clean fit in Mobile Landscape
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(200);
+    assert.equal(
+      await page.getByTestId('rotate-to-landscape-overlay').isVisible(),
+      true,
+      'Mobile portrait TitleScreen must show Rotate-to-Landscape overlay',
+    );
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.waitForTimeout(200);
+    assert.equal(
+      await page.getByTestId('rotate-to-landscape-overlay').isVisible(),
+      false,
+      'Rotating to mobile landscape must automatically dismiss Rotate-to-Landscape overlay',
+    );
+    const landscapeTitleCard = await page.evaluate(() => {
+      const card = document.querySelector('h1')?.closest('div[class*="rounded-2xl"]');
+      if (!card) return null;
+      const r = card.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, vh: window.innerHeight };
+    });
+    assert.ok(
+      landscapeTitleCard && landscapeTitleCard.bottom <= landscapeTitleCard.vh + 2,
+      `TitleScreen card must fit inside 844x390 landscape viewport without clipping: ${JSON.stringify(landscapeTitleCard)}`,
+    );
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.waitForTimeout(200);
+
     // 2. Navigate TitleScreen -> BusinessSetupModal -> Gameplay
     await page.getByRole('button', { name: /Start New Business/i }).click();
     await page.waitForSelector('input[type="text"]');
@@ -292,16 +368,35 @@ async function runBrowserQa() {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(150);
 
-    // 5. Audit responsive HUD & modal layouts across Mobile, Tablet, 720p, and 1080p
+    // 5. Audit responsive HUD & modal layouts across Mobile Portrait, Mobile Landscape, Tablet, 720p, and 1080p
     const viewports = [
-      { label: 'mobile-390x844', width: 390, height: 844 },
-      { label: 'tablet-768x1024', width: 768, height: 1024 },
-      { label: 'desktop-1280x720', width: 1280, height: 720 },
-      { label: 'desktop-1920x1080', width: 1920, height: 1080 },
+      { label: 'mobile-portrait-360x780', width: 360, height: 780, expectRotateOverlay: true, expectJoystick: true },
+      { label: 'mobile-portrait-390x844', width: 390, height: 844, expectRotateOverlay: false, expectJoystick: true },
+      { label: 'mobile-landscape-667x375', width: 667, height: 375, expectRotateOverlay: false, expectJoystick: true },
+      { label: 'mobile-landscape-844x390', width: 844, height: 390, expectRotateOverlay: false, expectJoystick: true },
+      { label: 'tablet-768x1024', width: 768, height: 1024, expectRotateOverlay: false, expectJoystick: false },
+      { label: 'desktop-1280x720', width: 1280, height: 720, expectRotateOverlay: false, expectJoystick: false },
+      { label: 'desktop-1920x1080', width: 1920, height: 1080, expectRotateOverlay: false, expectJoystick: false },
     ];
     for (const vp of viewports) {
-      await auditViewportLayout(page, vp.label, vp.width, vp.height);
+      await auditViewportLayout(page, vp.label, vp.width, vp.height, vp);
     }
+
+    // 6. Verify PauseModal stays within mobile landscape 667x375 bounds
+    await page.setViewportSize({ width: 667, height: 375 });
+    await page.waitForTimeout(150);
+    await page.getByRole('button', { name: /Menu|Jeda/i }).click();
+    await page.waitForTimeout(150);
+    const pauseBox = await page.evaluate(() => {
+      const dialog = document.querySelector('h2')?.closest('div[class*="rounded-2xl"]');
+      if (!dialog) return null;
+      const r = dialog.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, vh: window.innerHeight };
+    });
+    assert.ok(
+      pauseBox && pauseBox.top >= 0 && pauseBox.bottom <= pauseBox.vh + 2,
+      `PauseModal must fit cleanly in 667x375 landscape: ${JSON.stringify(pauseBox)}`,
+    );
 
     assert.deepEqual(pageErrors, [], `Uncaught page errors detected: ${pageErrors.join(' | ')}`);
     assert.deepEqual(consoleErrors, [], `Browser console errors detected: ${consoleErrors.join(' | ')}`);

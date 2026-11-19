@@ -15,6 +15,7 @@ import { PackagingModal } from '../src/components/PackagingModal';
 import { GameOverModal, PauseModal } from '../src/components/PauseAndEndModals';
 import { QualityControlModal } from '../src/components/QualityControlModal';
 import { RecipeBookModal } from '../src/components/RecipeBookModal';
+import { RotateToLandscapeOverlay } from '../src/components/RotateToLandscapeOverlay';
 import { TitleScreen } from '../src/components/TitleScreen';
 import { DAILY_EVENTS, getWeeklyFestivalForDay } from '../src/config/gameBalance';
 import type { JoystickInputRef } from '../src/game/DimsumWorldCanvas';
@@ -1102,5 +1103,39 @@ describe('Dimsumpreneur UI DOM E2E Interaction Suite', () => {
     );
     expect(container.textContent).toContain('Bonus Added to Wallet');
     expect(container.textContent).not.toContain('Ready to Claim');
+  });
+
+  it('shows RotateToLandscapeOverlay on mobile portrait, hides automatically on landscape, and supports portrait continue', () => {
+    const origW = window.innerWidth;
+    const origH = window.innerHeight;
+
+    const setWindowSize = (w: number, h: number) => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: w });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: h });
+      act(() => {
+        window.dispatchEvent(new Event('resize'));
+      });
+    };
+
+    try {
+      setWindowSize(390, 844);
+      renderElement(<RotateToLandscapeOverlay />);
+      expect(container.querySelector('[data-testid="rotate-to-landscape-overlay"]')).not.toBeNull();
+      expect(container.textContent).toContain('Rotate to Landscape');
+
+      // Rotating to mobile landscape automatically hides the overlay
+      setWindowSize(844, 390);
+      expect(container.querySelector('[data-testid="rotate-to-landscape-overlay"]')).toBeNull();
+
+      // Rotating back to portrait brings it back until explicitly dismissed
+      setWindowSize(360, 780);
+      expect(container.querySelector('[data-testid="rotate-to-landscape-overlay"]')).not.toBeNull();
+
+      clickButton('Continue in Portrait');
+      expect(container.querySelector('[data-testid="rotate-to-landscape-overlay"]')).toBeNull();
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: origW });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: origH });
+    }
   });
 });

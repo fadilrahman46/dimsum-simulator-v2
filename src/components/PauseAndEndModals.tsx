@@ -30,9 +30,9 @@ export const PauseModal: React.FC = () => {
   };
 
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-[#1C3529]/60">
-      <div className="w-full max-w-sm rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-xl p-6 space-y-3">
-        <h2 className="font-display text-2xl font-bold text-[#244D3B] text-center mb-3">
+    <div className="absolute inset-0 z-40 flex items-center justify-center p-3 sm:p-4 bg-[#1C3529]/60">
+      <div className="w-full max-w-sm max-h-[92vh] overflow-y-auto rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-xl p-4 sm:p-6 space-y-2.5 sm:space-y-3">
+        <h2 className="font-display text-xl sm:text-2xl font-bold text-[#244D3B] text-center mb-1 sm:mb-3">
           {t(language, 'Game Paused', 'Permainan Dijeda')}
         </h2>
 
@@ -145,8 +145,8 @@ export const GameOverModal: React.FC = () => {
   const totalRevenue = salesOrders.reduce((s, o) => s + o.totalAmount, 0);
 
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-[#1C3529]/75">
-      <div className="w-full max-w-md rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-xl p-7 text-center space-y-4">
+    <div className="absolute inset-0 z-40 flex items-center justify-center p-3 sm:p-4 bg-[#1C3529]/75">
+      <div className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-xl p-5 sm:p-7 text-center space-y-3 sm:space-y-4">
         <div className="text-xs font-bold text-[#B91C1C]">
           {t(language, 'BUSINESS INSOLVENCY', 'KEBANGKRUTAN USAHA')}
         </div>

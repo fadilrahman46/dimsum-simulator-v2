@@ -6,6 +6,7 @@ import { CUSTOMER_ARCHETYPES, getPackagingDef } from '../config/gameBalance';
 import { STATION_META, t } from '../i18n/translations';
 import { useGameStore } from '../store/useGameStore';
 import type { KitchenHelperRole, StationId } from '../types/game';
+import { useViewportMode } from '../utils/useViewportMode';
 import {
   CAMERA_ORBIT_BOUNDS,
   CAMERA_ZOOM_BOUNDS,
@@ -100,6 +101,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
   const activeStation = useGameStore((s) => s.activeStation);
   const activeCooking = useGameStore((s) => s.activeCooking);
   const mountRef = useRef<HTMLDivElement | null>(null);
+  const { width: viewportWidth, isShortLandscape } = useViewportMode();
   const [contextLost, setContextLost] = useState(false);
   const [stationTag, setStationTag] = useState<FloatingTag | null>(null);
   const [customerBubbles, setCustomerBubbles] = useState<CustomerThoughtBubble[]>([]);
@@ -1293,18 +1295,33 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
 
       {/* Lightweight 3D Camera Orbit & Zoom Bar (solid cream, zero backdrop-filter) */}
       {showCameraBar && (
-        <div className="absolute bottom-28 right-3 md:bottom-5 md:right-5 z-20 flex items-center gap-1 px-2 py-1.5 rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-md text-[#244D3B]">
+        <div
+          data-testid="camera-controls-bar"
+          className={`absolute z-20 flex items-center rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-md text-[#244D3B] ${
+            isShortLandscape
+              ? 'bottom-2 right-2 gap-0.5 px-1.5 py-1'
+              : viewportWidth < 768
+                ? 'bottom-32 right-3 gap-1 px-2 py-1.5'
+                : viewportWidth < 1024
+                  ? 'bottom-28 right-4 gap-1 px-2 py-1.5'
+                  : 'bottom-5 right-5 gap-1 px-2 py-1.5'
+          }`}
+        >
           <button
             type="button"
             onClick={() => adjustZoom(-0.15)}
             disabled={cameraUi.zoom <= CAMERA_ZOOM_BOUNDS.min + 0.01}
             title={t(language, 'Zoom Out (Mouse Wheel)', 'Perkecil (Roda Mouse)')}
             aria-label={t(language, 'Zoom Out', 'Perkecil Kamera')}
-            className="w-7 h-7 rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] disabled:opacity-40 flex items-center justify-center cursor-pointer"
+            className={`${isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] disabled:opacity-40 flex items-center justify-center cursor-pointer`}
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
-          <span className="px-1 text-[11px] font-mono tabular-nums font-semibold text-[#355446] min-w-[2.4rem] text-center">
+          <span
+            className={`px-1 font-mono tabular-nums font-semibold text-[#355446] text-center ${
+              isShortLandscape ? 'text-[10px] min-w-[2rem]' : 'text-[11px] min-w-[2.4rem]'
+            }`}
+          >
             {cameraUi.zoom.toFixed(1)}×
           </span>
           <button
@@ -1313,7 +1330,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
             disabled={cameraUi.zoom >= CAMERA_ZOOM_BOUNDS.max - 0.01}
             title={t(language, 'Zoom In (Mouse Wheel)', 'Perbesar (Roda Mouse)')}
             aria-label={t(language, 'Zoom In', 'Perbesar Kamera')}
-            className="w-7 h-7 rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] disabled:opacity-40 flex items-center justify-center cursor-pointer"
+            className={`${isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] disabled:opacity-40 flex items-center justify-center cursor-pointer`}
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
@@ -1327,7 +1344,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
               'Putar Kiri (atau Seret Klik Kanan)',
             )}
             aria-label={t(language, 'Rotate Camera Left', 'Putar Kamera Kiri')}
-            className="w-7 h-7 rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] flex items-center justify-center cursor-pointer"
+            className={`${isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] flex items-center justify-center cursor-pointer`}
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
@@ -1340,7 +1357,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
               'Putar Kanan (atau Seret Klik Kanan)',
             )}
             aria-label={t(language, 'Rotate Camera Right', 'Putar Kamera Kanan')}
-            className="w-7 h-7 rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] flex items-center justify-center cursor-pointer"
+            className={`${isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] flex items-center justify-center cursor-pointer`}
           >
             <RotateCw className="w-3.5 h-3.5" />
           </button>
@@ -1350,7 +1367,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
               onClick={resetCameraView}
               title={t(language, 'Reset Camera Angle', 'Reset Sudut Kamera')}
               aria-label={t(language, 'Reset Camera', 'Reset Kamera')}
-              className="w-7 h-7 rounded-lg bg-[#ED9B53] hover:bg-[#DF883D] text-[#1C3529] flex items-center justify-center cursor-pointer"
+              className={`${isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#ED9B53] hover:bg-[#DF883D] text-[#1C3529] flex items-center justify-center cursor-pointer`}
             >
               <LocateFixed className="w-3.5 h-3.5" />
             </button>

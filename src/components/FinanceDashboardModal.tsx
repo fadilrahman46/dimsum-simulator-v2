@@ -191,11 +191,11 @@ export const FinanceDashboardModal: React.FC = () => {
   );
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center p-3 md:p-6 bg-[#1C3529]/55">
-      <div className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between gap-4 px-6 py-4 bg-[#244D3B] text-[#FAF5EA]">
+    <div className="absolute inset-0 z-30 flex items-center justify-center p-2.5 sm:p-4 md:p-6 bg-[#1C3529]/55">
+      <div className="w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-xl overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 sm:px-6 sm:py-4 bg-[#244D3B] text-[#FAF5EA] shrink-0">
           <div>
-            <h2 className="font-display text-xl font-bold">
+            <h2 className="font-display text-lg sm:text-xl font-bold">
               {t(language, 'Business Report & Facility Upgrades', 'Laporan Keuangan & Upgrade Fasilitas')}
             </h2>
             <div className="text-xs text-[#D9E8C8] tabular-nums">

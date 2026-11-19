@@ -51,27 +51,27 @@ export const CookingMiniGamesModal: React.FC = () => {
   ] as const;
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center p-3 md:p-6 bg-[#1C3529]/60">
-      <div className="w-full max-w-2xl rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-xl overflow-hidden">
+    <div className="absolute inset-0 z-30 flex items-center justify-center p-2.5 sm:p-4 md:p-6 bg-[#1C3529]/60">
+      <div className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-xl overflow-hidden">
         {/* Top Stage Progress Bar */}
-        <div className="px-6 py-4 bg-[#244D3B] text-[#FAF5EA]">
-          <div className="flex items-center justify-between gap-2">
+        <div className="px-4 py-2.5 sm:px-6 sm:py-4 bg-[#244D3B] text-[#FAF5EA] shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <div className="text-xs text-[#D9E8C8]">
                 {t(language, 'Production Kitchen', 'Dapur Produksi')} ·{' '}
                 {activeCooking.batchCount * recipe.batchSize} pcs
               </div>
-              <h2 className="font-display text-lg md:text-xl font-bold">
+              <h2 className="font-display text-base sm:text-lg md:text-xl font-bold">
                 {language === 'id' ? recipe.nameId : recipe.nameEn}
               </h2>
             </div>
-            <div className="flex items-center gap-1.5 text-xs">
+            <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 text-[11px] sm:text-xs">
               {stages.map((st) => {
                 const isCurrent = activeCooking.stage === st.key;
                 return (
                   <span
                     key={st.key}
-                    className={`px-2.5 py-1 rounded-lg font-semibold ${
+                    className={`px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg font-semibold ${
                       isCurrent ? 'bg-[#ED9B53] text-[#1C3529]' : 'bg-white/10 text-[#D9E8C8]'
                     }`}
                   >
@@ -83,7 +83,7 @@ export const CookingMiniGamesModal: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {activeCooking.stage === 'PREP' && (
             <PrepMiniGame
               language={language}

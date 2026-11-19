@@ -174,9 +174,9 @@ export const SupplierNegotiationModal: React.FC<SupplierNegotiationModalProps> =
 
   if (!initialInit.ok || !session) {
     return (
-      <div className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-[#1C3529]/65">
-        <div className="w-full max-w-md rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-2xl overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 bg-[#244D3B] text-[#FAF5EA]">
+      <div className="absolute inset-0 z-40 flex items-center justify-center p-3 sm:p-4 bg-[#1C3529]/65">
+        <div className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-2xl">
+          <div className="flex items-center justify-between px-4 py-3 sm:px-5 sm:py-4 bg-[#244D3B] text-[#FAF5EA]">
             <h3 className="font-display text-lg font-bold">{supplier}</h3>
             <button
               onClick={onClose}
@@ -241,10 +241,10 @@ export const SupplierNegotiationModal: React.FC<SupplierNegotiationModalProps> =
   const latestRound = session.history[session.history.length - 1];
 
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center p-3 md:p-6 bg-[#1C3529]/65">
+    <div className="absolute inset-0 z-40 flex items-center justify-center p-2.5 sm:p-4 md:p-6 bg-[#1C3529]/65">
       <div className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between gap-4 px-6 py-4 bg-[#244D3B] text-[#FAF5EA]">
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 sm:px-6 sm:py-4 bg-[#244D3B] text-[#FAF5EA] shrink-0">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Handshake className="w-5 h-5 text-[#ED9B53] shrink-0" />

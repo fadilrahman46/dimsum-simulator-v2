@@ -48,6 +48,12 @@ import {
   spawnCustomerAgent,
 } from '../domain/customerEngine';
 import {
+  type DailyMissionEvent,
+  applyDailyMissionProgress,
+  claimDailyMissionReward,
+  generateDailyMissions,
+} from '../domain/dailyMissionsEngine';
+import {
   appendTransactionIdempotent,
   buildDailyReport,
   calculateSales,
@@ -109,6 +115,7 @@ import type {
   CustomerAgent,
   CustomerFeedbackPopup,
   DailyEventDef,
+  DailyMission,
   DailyReport,
   FinancialTransaction,
   FranchiseBranch,
@@ -209,6 +216,7 @@ interface GameStoreState {
   franchiseBranches: FranchiseBranch[];
   endlessMasteryUnlocked: boolean;
   prestigeLevel: number;
+  dailyMissions: DailyMission[];
   supplierRelationships: Record<string, SupplierRelationshipState>;
   activeSupplierDeals: Record<string, ActiveSupplierDeal>;
   storeTimeRemainingSec: number;
@@ -349,6 +357,11 @@ interface GameStoreState {
   setKitchenHelperShift: (helperId: KitchenHelperRole, shift: StaffShiftMode) => void;
   fireKitchenHelper: (helperId: KitchenHelperRole) => void;
   repayDebt: (amount?: number) => { ok: boolean; errorEn?: string; errorId?: string };
+  trackDailyMissionProgress: (
+    event: DailyMissionEvent,
+  ) => { newlyRewarded: DailyMission[]; bonusGranted: number };
+  claimDailyMission: (missionId: string) => { ok: boolean; rewardCash?: number };
+  claimAllDailyMissions: () => { ok: boolean; totalRewardCash: number; claimedCount: number };
   advanceToNextDay: () => void;
   skipTutorial: () => void;
 }
@@ -433,6 +446,67 @@ function applyBonusObjectiveRewards(params: {
   return { cashDelta, updatedTransactions: nextTxs, newlyClaimed };
 }
 
+function applyDailyMissionRewards(params: {
+  dailyMissions: DailyMission[];
+  event?: DailyMissionEvent;
+  currentDay: number;
+  transactions: FinancialTransaction[];
+}): {
+  updatedMissions: DailyMission[];
+  cashDelta: number;
+  updatedTransactions: FinancialTransaction[];
+  newlyRewarded: DailyMission[];
+} {
+  const progressedMissions = params.event
+    ? applyDailyMissionProgress(params.dailyMissions, params.event).missions
+    : params.dailyMissions;
+
+  let nextTxs = params.transactions;
+  let cashDelta = 0;
+  const newlyRewarded: DailyMission[] = [];
+
+  const updatedMissions = progressedMissions.map((mission) => {
+    if (!mission.completed || mission.claimed) {
+      return mission;
+    }
+
+    const refId = `daily-mission-day-${params.currentDay}-${mission.id}`;
+    const alreadyPaid = nextTxs.some(
+      (tx) => tx.category === 'GOAL_BONUS' && tx.referenceId === refId,
+    );
+
+    const rewardedMission: DailyMission = {
+      ...mission,
+      claimed: true,
+    };
+
+    if (!alreadyPaid) {
+      nextTxs = appendTransactionIdempotent(nextTxs, {
+        id: makeId('tx'),
+        type: 'INCOME',
+        category: 'GOAL_BONUS',
+        amount: mission.rewardCash,
+        descriptionEn: `Daily Mission Bonus: ${mission.titleEn}`,
+        descriptionId: `Bonus Misi Harian: ${mission.titleId}`,
+        referenceId: refId,
+        day: params.currentDay,
+        timestamp: Date.now(),
+      });
+      cashDelta += mission.rewardCash;
+      newlyRewarded.push(rewardedMission);
+    }
+
+    return rewardedMission;
+  });
+
+  return {
+    updatedMissions,
+    cashDelta,
+    updatedTransactions: nextTxs,
+    newlyRewarded,
+  };
+}
+
 function evaluateStoreAchievements(
   s: GameStoreState,
   overrides: Partial<{
@@ -509,6 +583,7 @@ function buildSnapshotFromState(state: GameStoreState): SaveSnapshot {
     franchiseBranches: state.franchiseBranches,
     endlessMasteryUnlocked: state.endlessMasteryUnlocked,
     prestigeLevel: state.prestigeLevel,
+    dailyMissions: state.dailyMissions,
     supplierRelationships: state.supplierRelationships,
     activeSupplierDeals: state.activeSupplierDeals,
     storeTimeRemainingSec: state.storeTimeRemainingSec,
@@ -569,6 +644,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   franchiseBranches: [],
   endlessMasteryUnlocked: false,
   prestigeLevel: 0,
+  dailyMissions: [],
   supplierRelationships: createInitialSupplierRelationships(),
   activeSupplierDeals: {},
   storeTimeRemainingSec: ECONOMY_RULES.storeOpenDurationSec,
@@ -685,6 +761,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       franchiseBranches: [],
       endlessMasteryUnlocked: false,
       prestigeLevel: 0,
+      dailyMissions: generateDailyMissions({
+        day: 1,
+        businessLevel: 1,
+        recipes: starterRecipes,
+        upgrades: createDefaultUpgrades(),
+      }),
       supplierRelationships: createInitialSupplierRelationships(),
       activeSupplierDeals: {},
       storeTimeRemainingSec: ECONOMY_RULES.storeOpenDurationSec,
@@ -725,6 +807,22 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ...INITIAL_RECIPES.filter((r) => !savedRecipeIds.has(r.id)).map((r) => ({ ...r })),
     ];
 
+    const baseDailyMissions =
+      Array.isArray(saved.dailyMissions) && saved.dailyMissions.length > 0
+        ? saved.dailyMissions
+        : generateDailyMissions({
+            day: saved.currentDay,
+            businessLevel: saved.business.level,
+            recipes: mergedRecipes,
+            upgrades: { ...createDefaultUpgrades(), ...(saved.upgrades ?? {}) },
+          });
+
+    const settledMissions = applyDailyMissionRewards({
+      dailyMissions: baseDailyMissions,
+      currentDay: saved.currentDay,
+      transactions: saved.transactions,
+    });
+
     set({
       hasSavedGame: true,
       gameState: restoredGameState,
@@ -736,7 +834,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       business: saved.business,
       currentDay: saved.currentDay,
       dayStartCash: saved.dayStartCash,
-      cashBalance: saved.cashBalance,
+      cashBalance: saved.cashBalance + settledMissions.cashDelta,
       unpaidDebt: saved.unpaidDebt ?? 0,
       playerPosition: saved.playerPosition,
       isCarryingProduct: hasSellable,
@@ -756,7 +854,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       rushHourActive: isRushHourWindow(saved.storeTimeRemainingSec),
       zeroWasteStreakDays: saved.zeroWasteStreakDays ?? 0,
       salesOrders: saved.salesOrders,
-      transactions: saved.transactions,
+      transactions: settledMissions.updatedTransactions,
       dailyReports: saved.dailyReports,
       upgrades: { ...createDefaultUpgrades(), ...(saved.upgrades ?? {}) },
       kitchenStaff: (saved.kitchenStaff ?? []).map((h) => ({
@@ -783,6 +881,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       franchiseBranches: saved.franchiseBranches ?? [],
       endlessMasteryUnlocked: Boolean(saved.endlessMasteryUnlocked),
       prestigeLevel: saved.prestigeLevel ?? 0,
+      dailyMissions: settledMissions.updatedMissions,
       supplierRelationships: normalizeSupplierRelationships(saved.supplierRelationships),
       activeSupplierDeals: saved.activeSupplierDeals ?? {},
       storeTimeRemainingSec: saved.storeTimeRemainingSec,
@@ -891,6 +990,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       activeCooking: null,
       activeDelegation: null,
       customers: [],
+      dailyMissions: [],
     });
   },
 
@@ -1596,16 +1696,34 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     });
 
     const updatedStaff = s.kitchenStaff.map(computeStaffMoraleAfterBatch);
+    const missionResult = applyDailyMissionRewards({
+      dailyMissions: s.dailyMissions,
+      event: {
+        type: 'COOK_QC',
+        pcsProduced: qtyProduced,
+        qualityScore: checkedBatch.qualityScore,
+        passedQc: checkedBatch.status === 'QC_PASSED',
+      },
+      currentDay: s.currentDay,
+      transactions: bonusCheck.updatedTransactions,
+    });
 
     soundFx.playSteam();
+    if (missionResult.cashDelta > 0) {
+      soundFx.playCashier();
+    }
     set({
       activeDelegation: null,
-      cashBalance: s.cashBalance + bonusCheck.cashDelta,
-      transactions: bonusCheck.updatedTransactions,
+      cashBalance: s.cashBalance + bonusCheck.cashDelta + missionResult.cashDelta,
+      transactions: missionResult.updatedTransactions,
       productionBatches: nextProdBatches,
+      dailyMissions: missionResult.updatedMissions,
       kitchenStaff: updatedStaff,
       unlockedAchievements: nextAchievements,
-      celebratingUntil: checkedBatch.status === 'QC_PASSED' ? Date.now() + 2000 : 0,
+      celebratingUntil:
+        checkedBatch.status === 'QC_PASSED' || missionResult.cashDelta > 0
+          ? Date.now() + 2000
+          : 0,
       tutorialStep:
         s.tutorialStep === 'COOK_BATCH' || s.tutorialStep === 'BUY_INGREDIENTS'
           ? 'CHECK_QC'
@@ -1636,6 +1754,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         type: 'success',
         textEn: `Bonus Complete: ${claimed.titleEn} (+${formatRupiah(claimed.rewardCash)})!`,
         textId: `Bonus Tercapai: ${claimed.titleId} (+${formatRupiah(claimed.rewardCash)})!`,
+      });
+    }
+    for (const m of missionResult.newlyRewarded) {
+      get().pushToast({
+        type: 'success',
+        textEn: `Mission Complete: ${m.titleEn} (+${formatRupiah(m.rewardCash)} bonus currency added to wallet!)`,
+        textId: `Misi Selesai: ${m.titleId} (+${formatRupiah(m.rewardCash)} bonus saldo masuk dompet!)`,
       });
     }
     const newlyTired = updatedStaff.filter(
@@ -1750,19 +1875,37 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       });
 
       const updatedStaff = s.kitchenStaff.map(computeStaffMoraleAfterBatch);
+      const missionResult = applyDailyMissionRewards({
+        dailyMissions: s.dailyMissions,
+        event: {
+          type: 'COOK_QC',
+          pcsProduced: qtyProduced,
+          qualityScore: checkedBatch.qualityScore,
+          passedQc: checkedBatch.status === 'QC_PASSED',
+        },
+        currentDay: s.currentDay,
+        transactions: bonusCheck.updatedTransactions,
+      });
 
       soundFx.setSteamAmbience(false);
       soundFx.playSteam();
+      if (missionResult.cashDelta > 0) {
+        soundFx.playCashier();
+      }
       set({
         activeCooking: null,
-        cashBalance: s.cashBalance + bonusCheck.cashDelta,
-        transactions: bonusCheck.updatedTransactions,
+        cashBalance: s.cashBalance + bonusCheck.cashDelta + missionResult.cashDelta,
+        transactions: missionResult.updatedTransactions,
         productionBatches: nextProdBatches,
+        dailyMissions: missionResult.updatedMissions,
         kitchenStaff: updatedStaff,
         unlockedAchievements: nextAchievements,
         gameState: 'QUALITY_CONTROL',
         activeStation: 'steamer',
-        celebratingUntil: checkedBatch.status === 'QC_PASSED' ? Date.now() + 2200 : 0,
+        celebratingUntil:
+          checkedBatch.status === 'QC_PASSED' || missionResult.cashDelta > 0
+            ? Date.now() + 2200
+            : 0,
         tutorialStep:
           s.tutorialStep === 'COOK_BATCH' || s.tutorialStep === 'BUY_INGREDIENTS'
             ? 'CHECK_QC'
@@ -1780,6 +1923,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           type: 'success',
           textEn: `Bonus Complete: ${claimed.titleEn} (+${formatRupiah(claimed.rewardCash)})!`,
           textId: `Bonus Tercapai: ${claimed.titleId} (+${formatRupiah(claimed.rewardCash)})!`,
+        });
+      }
+      for (const m of missionResult.newlyRewarded) {
+        get().pushToast({
+          type: 'success',
+          textEn: `Mission Complete: ${m.titleEn} (+${formatRupiah(m.rewardCash)} bonus currency added to wallet!)`,
+          textId: `Misi Selesai: ${m.titleId} (+${formatRupiah(m.rewardCash)} bonus saldo masuk dompet!)`,
         });
       }
       const newlyTired = updatedStaff.filter(
@@ -1848,6 +1998,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       const pkgDef = getPackagingDef(packagingTypeId);
       const pcsNeeded = boxCount * pkgDef.capacity;
 
+      const missionResult = applyDailyMissionRewards({
+        dailyMissions: s.dailyMissions,
+        event: {
+          type: 'PACKAGE',
+          boxesPackaged: boxCount,
+        },
+        currentDay: s.currentDay,
+        transactions: s.transactions,
+      });
+
       if (prodBatch.quantity >= pcsNeeded) {
         const result = packageProductionBatch({
           productionBatch: prodBatch,
@@ -1860,12 +2020,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         });
 
         soundFx.playSuccess();
+        if (missionResult.cashDelta > 0) {
+          soundFx.playCashier();
+        }
         set({
+          cashBalance: s.cashBalance + missionResult.cashDelta,
+          transactions: missionResult.updatedTransactions,
           productionBatches: s.productionBatches.map((b) =>
             b.id === productionBatchId ? result.updatedProductionBatch : b,
           ),
           productBatches: [...s.productBatches, result.productBatch],
           packagingStock: result.updatedPackagingStock,
+          dailyMissions: missionResult.updatedMissions,
+          celebratingUntil: missionResult.cashDelta > 0 ? Date.now() + 1800 : s.celebratingUntil,
           isCarryingProduct: true,
           tutorialStep:
             s.tutorialStep === 'PACKAGE_DIMSUM' || s.tutorialStep === 'CHECK_QC'
@@ -1891,10 +2058,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         });
 
         soundFx.playSuccess();
+        if (missionResult.cashDelta > 0) {
+          soundFx.playCashier();
+        }
         set({
+          cashBalance: s.cashBalance + missionResult.cashDelta,
+          transactions: missionResult.updatedTransactions,
           productionBatches: poolResult.updatedProductionBatches,
           productBatches: [...s.productBatches, poolResult.productBatch],
           packagingStock: poolResult.updatedPackagingStock,
+          dailyMissions: missionResult.updatedMissions,
+          celebratingUntil: missionResult.cashDelta > 0 ? Date.now() + 1800 : s.celebratingUntil,
           isCarryingProduct: true,
           tutorialStep:
             s.tutorialStep === 'PACKAGE_DIMSUM' || s.tutorialStep === 'CHECK_QC'
@@ -1912,6 +2086,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         textEn: `Packaged ${boxCount} boxes ready for sale!`,
         textId: `${boxCount} kotak berhasil dikemas & siap dijual!`,
       });
+      for (const m of missionResult.newlyRewarded) {
+        get().pushToast({
+          type: 'success',
+          textEn: `Mission Complete: ${m.titleEn} (+${formatRupiah(m.rewardCash)} bonus currency added to wallet!)`,
+          textId: `Misi Selesai: ${m.titleId} (+${formatRupiah(m.rewardCash)} bonus saldo masuk dompet!)`,
+        });
+      }
       get().persistNow();
       return { ok: true };
     } catch (err) {
@@ -1935,12 +2116,28 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         upgrades: s.upgrades,
         newProductBatchId: makeId('pkgbatch'),
       });
+      const missionResult = applyDailyMissionRewards({
+        dailyMissions: s.dailyMissions,
+        event: {
+          type: 'PACKAGE',
+          boxesPackaged: boxCount,
+        },
+        currentDay: s.currentDay,
+        transactions: s.transactions,
+      });
 
       soundFx.playSuccess();
+      if (missionResult.cashDelta > 0) {
+        soundFx.playCashier();
+      }
       set({
+        cashBalance: s.cashBalance + missionResult.cashDelta,
+        transactions: missionResult.updatedTransactions,
         productionBatches: poolResult.updatedProductionBatches,
         productBatches: [...s.productBatches, poolResult.productBatch],
         packagingStock: poolResult.updatedPackagingStock,
+        dailyMissions: missionResult.updatedMissions,
+        celebratingUntil: missionResult.cashDelta > 0 ? Date.now() + 1800 : s.celebratingUntil,
         isCarryingProduct: true,
         tutorialStep:
           s.tutorialStep === 'PACKAGE_DIMSUM' || s.tutorialStep === 'CHECK_QC'
@@ -1963,6 +2160,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
             ? `Menggabungkan ${poolResult.batchesUsedCount} batch menjadi ${boxCount} kotak!`
             : `${boxCount} kotak berhasil dikemas & siap dijual!`,
       });
+      for (const m of missionResult.newlyRewarded) {
+        get().pushToast({
+          type: 'success',
+          textEn: `Mission Complete: ${m.titleEn} (+${formatRupiah(m.rewardCash)} bonus currency added to wallet!)`,
+          textId: `Misi Selesai: ${m.titleId} (+${formatRupiah(m.rewardCash)} bonus saldo masuk dompet!)`,
+        });
+      }
       get().persistNow();
       return { ok: true };
     } catch (err) {
@@ -2456,14 +2660,30 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         )
       : s.customers.filter((c) => c.id !== customerId);
 
+    const missionResult = applyDailyMissionRewards({
+      dailyMissions: s.dailyMissions,
+      event: {
+        type: 'SALE',
+        recipeId: batch.recipeId,
+        pcsSold: customer.quantityBoxes * batch.pcsPerBox,
+        boxesSold: customer.quantityBoxes,
+        revenueAmount: adjustedTotal,
+        orderType: 'DIRECT',
+      },
+      currentDay: s.currentDay,
+      transactions: bonusCheck.updatedTransactions,
+    });
+
     soundFx.playCashier();
     set({
-      cashBalance: s.cashBalance + adjustedTotal + bonusCheck.cashDelta,
+      cashBalance:
+        s.cashBalance + adjustedTotal + bonusCheck.cashDelta + missionResult.cashDelta,
       productBatches: nextBatches,
       isCarryingProduct: stillHasStock,
       customers: updatedCustomers,
       salesOrders: nextSalesOrders,
-      transactions: bonusCheck.updatedTransactions,
+      transactions: missionResult.updatedTransactions,
+      dailyMissions: missionResult.updatedMissions,
       unlockedAchievements: nextAchievements,
       celebratingUntil: Date.now() + 1800,
       business: nextBusiness,
@@ -2481,6 +2701,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         type: 'success',
         textEn: `Bonus Complete: ${claimed.titleEn} (+${formatRupiah(claimed.rewardCash)})!`,
         textId: `Bonus Tercapai: ${claimed.titleId} (+${formatRupiah(claimed.rewardCash)})!`,
+      });
+    }
+    for (const m of missionResult.newlyRewarded) {
+      get().pushToast({
+        type: 'success',
+        textEn: `Mission Complete: ${m.titleEn} (+${formatRupiah(m.rewardCash)} bonus currency added to wallet!)`,
+        textId: `Misi Selesai: ${m.titleId} (+${formatRupiah(m.rewardCash)} bonus saldo masuk dompet!)`,
       });
     }
     get().persistNow();
@@ -2657,16 +2884,33 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       newReputation: nextRep,
     });
 
+    const missionResult = applyDailyMissionRewards({
+      dailyMissions: s.dailyMissions,
+      event: {
+        type: 'SALE',
+        recipeId: batch.recipeId,
+        pcsSold: po.quantityBoxes * batch.pcsPerBox,
+        boxesSold: po.quantityBoxes,
+        revenueAmount: totalAmount,
+        orderType: 'PRE_ORDER',
+      },
+      currentDay: s.currentDay,
+      transactions: bonusCheck.updatedTransactions,
+    });
+
     soundFx.playCashier();
     set({
-      cashBalance: s.cashBalance + totalAmount + bonusCheck.cashDelta,
+      cashBalance:
+        s.cashBalance + totalAmount + bonusCheck.cashDelta + missionResult.cashDelta,
       productBatches: nextBatches,
       preOrders: s.preOrders.map((p) =>
         p.id === preOrderId ? { ...p, fulfilled: true, accepted: true } : p,
       ),
       salesOrders: nextSalesOrders,
-      transactions: bonusCheck.updatedTransactions,
+      transactions: missionResult.updatedTransactions,
+      dailyMissions: missionResult.updatedMissions,
       unlockedAchievements: nextAchievements,
+      celebratingUntil: missionResult.cashDelta > 0 ? Date.now() + 1800 : s.celebratingUntil,
       business: nextBusiness,
       todayStats: {
         ...s.todayStats,
@@ -2680,6 +2924,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         type: 'success',
         textEn: `Bonus Complete: ${claimed.titleEn} (+${formatRupiah(claimed.rewardCash)})!`,
         textId: `Bonus Tercapai: ${claimed.titleId} (+${formatRupiah(claimed.rewardCash)})!`,
+      });
+    }
+    for (const m of missionResult.newlyRewarded) {
+      get().pushToast({
+        type: 'success',
+        textEn: `Mission Complete: ${m.titleEn} (+${formatRupiah(m.rewardCash)} bonus currency added to wallet!)`,
+        textId: `Misi Selesai: ${m.titleId} (+${formatRupiah(m.rewardCash)} bonus saldo masuk dompet!)`,
       });
     }
     get().persistNow();
@@ -2806,15 +3057,32 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       (b) => b.status === 'PACKAGED' && b.boxesAvailable > 0,
     );
 
+    const missionResult = applyDailyMissionRewards({
+      dailyMissions: s.dailyMissions,
+      event: {
+        type: 'SALE',
+        recipeId: batch.recipeId,
+        pcsSold: order.quantityBoxes * batch.pcsPerBox,
+        boxesSold: order.quantityBoxes,
+        revenueAmount: netTotal,
+        orderType: 'ONLINE_DELIVERY',
+      },
+      currentDay: s.currentDay,
+      transactions: bonusCheck.updatedTransactions,
+    });
+
     soundFx.playCashier();
     set({
-      cashBalance: s.cashBalance + netTotal + bonusCheck.cashDelta,
+      cashBalance:
+        s.cashBalance + netTotal + bonusCheck.cashDelta + missionResult.cashDelta,
       productBatches: nextBatches,
       isCarryingProduct: stillHasStock,
       onlineOrders: s.onlineOrders.filter((o) => o.id !== orderId),
       salesOrders: nextSalesOrders,
-      transactions: bonusCheck.updatedTransactions,
+      transactions: missionResult.updatedTransactions,
+      dailyMissions: missionResult.updatedMissions,
       unlockedAchievements: nextAchievements,
+      celebratingUntil: missionResult.cashDelta > 0 ? Date.now() + 1800 : s.celebratingUntil,
       business: nextBusiness,
       todayStats: {
         ...s.todayStats,
@@ -2832,6 +3100,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         type: 'success',
         textEn: `Bonus Complete: ${claimed.titleEn} (+${formatRupiah(claimed.rewardCash)})!`,
         textId: `Bonus Tercapai: ${claimed.titleId} (+${formatRupiah(claimed.rewardCash)})!`,
+      });
+    }
+    for (const m of missionResult.newlyRewarded) {
+      get().pushToast({
+        type: 'success',
+        textEn: `Mission Complete: ${m.titleEn} (+${formatRupiah(m.rewardCash)} bonus currency added to wallet!)`,
+        textId: `Misi Selesai: ${m.titleId} (+${formatRupiah(m.rewardCash)} bonus saldo masuk dompet!)`,
       });
     }
     get().persistNow();
@@ -3683,6 +3958,148 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     return { ok: true };
   },
 
+  trackDailyMissionProgress: (event) => {
+    const s = get();
+    const result = applyDailyMissionRewards({
+      dailyMissions: s.dailyMissions,
+      event,
+      currentDay: s.currentDay,
+      transactions: s.transactions,
+    });
+
+    const changed =
+      result.cashDelta > 0 ||
+      result.newlyRewarded.length > 0 ||
+      result.updatedMissions.some(
+        (m, idx) =>
+          m.current !== s.dailyMissions[idx]?.current ||
+          m.completed !== s.dailyMissions[idx]?.completed ||
+          m.claimed !== s.dailyMissions[idx]?.claimed,
+      );
+
+    if (!changed) {
+      return { newlyRewarded: [], bonusGranted: 0 };
+    }
+
+    if (result.cashDelta > 0) {
+      soundFx.playCashier();
+    }
+
+    set({
+      cashBalance: s.cashBalance + result.cashDelta,
+      dailyMissions: result.updatedMissions,
+      transactions: result.updatedTransactions,
+      celebratingUntil:
+        result.cashDelta > 0 ? Date.now() + 1800 : s.celebratingUntil,
+    });
+
+    for (const m of result.newlyRewarded) {
+      get().pushToast({
+        type: 'success',
+        textEn: `Mission Complete: ${m.titleEn} (+${formatRupiah(m.rewardCash)} bonus currency added to wallet!)`,
+        textId: `Misi Selesai: ${m.titleId} (+${formatRupiah(m.rewardCash)} bonus saldo masuk dompet!)`,
+      });
+    }
+
+    get().persistNow();
+    return { newlyRewarded: result.newlyRewarded, bonusGranted: result.cashDelta };
+  },
+
+  claimDailyMission: (missionId) => {
+    const s = get();
+    const res = claimDailyMissionReward(s.dailyMissions, missionId);
+    if (!res.ok || !res.claimedMission) {
+      return { ok: false };
+    }
+
+    const refId = `daily-mission-day-${s.currentDay}-${res.claimedMission.id}`;
+    const alreadyPaid = s.transactions.some(
+      (tx) => tx.category === 'GOAL_BONUS' && tx.referenceId === refId,
+    );
+    const nextTxs = alreadyPaid
+      ? s.transactions
+      : appendTransactionIdempotent(s.transactions, {
+          id: makeId('tx'),
+          type: 'INCOME',
+          category: 'GOAL_BONUS',
+          amount: res.rewardCash,
+          descriptionEn: `Daily Mission Reward: ${res.claimedMission.titleEn}`,
+          descriptionId: `Hadiah Misi Harian: ${res.claimedMission.titleId}`,
+          referenceId: refId,
+          day: s.currentDay,
+          timestamp: Date.now(),
+        });
+
+    const cashDelta = alreadyPaid ? 0 : res.rewardCash;
+    soundFx.playCashier();
+    set({
+      cashBalance: s.cashBalance + cashDelta,
+      dailyMissions: res.missions,
+      transactions: nextTxs,
+      celebratingUntil: Date.now() + 1400,
+    });
+    get().pushToast({
+      type: 'success',
+      textEn: `Mission Reward Claimed: ${res.claimedMission.titleEn} (+${formatRupiah(res.rewardCash)})!`,
+      textId: `Hadiah Misi Diklaim: ${res.claimedMission.titleId} (+${formatRupiah(res.rewardCash)})!`,
+    });
+    get().persistNow();
+    return { ok: true, rewardCash: res.rewardCash };
+  },
+
+  claimAllDailyMissions: () => {
+    const s = get();
+    const claimable = s.dailyMissions.filter((m) => m.completed && !m.claimed);
+    if (claimable.length === 0) {
+      return { ok: false, totalRewardCash: 0, claimedCount: 0 };
+    }
+
+    let nextMissions = s.dailyMissions;
+    let nextTxs = s.transactions;
+    let totalCashDelta = 0;
+    let claimedCount = 0;
+
+    for (const item of claimable) {
+      const res = claimDailyMissionReward(nextMissions, item.id);
+      if (!res.ok || !res.claimedMission) continue;
+      nextMissions = res.missions;
+      const refId = `daily-mission-day-${s.currentDay}-${res.claimedMission.id}`;
+      const alreadyPaid = nextTxs.some(
+        (tx) => tx.category === 'GOAL_BONUS' && tx.referenceId === refId,
+      );
+      if (!alreadyPaid) {
+        nextTxs = appendTransactionIdempotent(nextTxs, {
+          id: makeId('tx'),
+          type: 'INCOME',
+          category: 'GOAL_BONUS',
+          amount: res.rewardCash,
+          descriptionEn: `Daily Mission Reward: ${res.claimedMission.titleEn}`,
+          descriptionId: `Hadiah Misi Harian: ${res.claimedMission.titleId}`,
+          referenceId: refId,
+          day: s.currentDay,
+          timestamp: Date.now(),
+        });
+        totalCashDelta += res.rewardCash;
+      }
+      claimedCount += 1;
+    }
+
+    soundFx.playCashier();
+    set({
+      cashBalance: s.cashBalance + totalCashDelta,
+      dailyMissions: nextMissions,
+      transactions: nextTxs,
+      celebratingUntil: Date.now() + 1600,
+    });
+    get().pushToast({
+      type: 'success',
+      textEn: `Claimed ${claimedCount} Daily Mission reward(s) (+${formatRupiah(totalCashDelta)})!`,
+      textId: `Berhasil mengklaim ${claimedCount} hadiah Misi Harian (+${formatRupiah(totalCashDelta)})!`,
+    });
+    get().persistNow();
+    return { ok: true, totalRewardCash: totalCashDelta, claimedCount };
+  },
+
   advanceToNextDay: () => {
     const s = get();
     const nextDay = s.currentDay + 1;
@@ -3831,6 +4248,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       business: nextBusiness,
       preOrders: nextPreOrders,
       unlockedAchievements: nextAchievements,
+      prestigeLevel: s.prestigeLevel,
+      dailyMissions: generateDailyMissions({
+        day: nextDay,
+        businessLevel: nextBusiness.level,
+        recipes: s.recipes,
+        upgrades: s.upgrades,
+      }),
       activeMarketEvent: pickDailyMarketEvent(nextDay),
       activeDailyEvent: nextDailyEvent,
       activeFestival: nextFestival,

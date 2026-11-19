@@ -658,6 +658,11 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
     window.addEventListener('resize', onResize);
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => onResize())
+        : null;
+    resizeObserver?.observe(container);
     window.addEventListener('pointerup', onPointerUp);
     renderer.domElement.addEventListener('contextmenu', onContextMenu);
     renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
@@ -1157,6 +1162,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('resize', onResize);
+      resizeObserver?.disconnect();
       window.removeEventListener('pointerup', onPointerUp);
       renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       renderer.domElement.removeEventListener('wheel', onWheel);
@@ -1287,7 +1293,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
 
       {/* Lightweight 3D Camera Orbit & Zoom Bar (solid cream, zero backdrop-filter) */}
       {showCameraBar && (
-        <div className="absolute bottom-24 right-3 md:bottom-5 md:right-5 z-20 flex items-center gap-1 px-2 py-1.5 rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-md text-[#244D3B]">
+        <div className="absolute bottom-28 right-3 md:bottom-5 md:right-5 z-20 flex items-center gap-1 px-2 py-1.5 rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-md text-[#244D3B]">
           <button
             type="button"
             onClick={() => adjustZoom(-0.15)}

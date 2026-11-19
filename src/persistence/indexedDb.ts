@@ -1,9 +1,11 @@
 import {
+  INITIAL_RECIPES,
   SAVE_SCHEMA_VERSION,
   createDefaultUpgrades,
   createInitialRivalShop,
   getWeeklyFestivalForDay,
 } from '../config/gameBalance';
+import { generateDailyMissions } from '../domain/dailyMissionsEngine';
 import type { SaveSnapshot } from '../types/game';
 
 const DB_NAME = 'dimsumpreneur_db';
@@ -66,6 +68,21 @@ export function migrateSaveSnapshot(raw: unknown): SaveSnapshot | null {
     endlessMasteryUnlocked: Boolean(candidate.endlessMasteryUnlocked),
     prestigeLevel:
       typeof candidate.prestigeLevel === 'number' ? candidate.prestigeLevel : 0,
+    dailyMissions:
+      Array.isArray(candidate.dailyMissions) && candidate.dailyMissions.length > 0
+        ? candidate.dailyMissions
+        : generateDailyMissions({
+            day: candidate.currentDay ?? 1,
+            businessLevel: candidate.business.level ?? 1,
+            recipes:
+              Array.isArray(candidate.recipes) && candidate.recipes.length > 0
+                ? candidate.recipes
+                : INITIAL_RECIPES,
+            upgrades: {
+              ...createDefaultUpgrades(),
+              ...(candidate.upgrades ?? {}),
+            },
+          }),
     bgmVolume:
       typeof candidate.bgmVolume === 'number'
         ? Math.max(0, Math.min(1, candidate.bgmVolume))

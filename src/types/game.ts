@@ -513,6 +513,34 @@ export interface BonusObjectiveDef {
   referenceId: string;
 }
 
+export type DailyMissionType =
+  | 'SELL_RECIPE_PCS'
+  | 'PRODUCE_PCS'
+  | 'HIGH_QC_BATCH'
+  | 'PACKAGE_BOXES'
+  | 'SERVE_CUSTOMERS'
+  | 'EARN_REVENUE'
+  | 'SERVE_DELIVERY_OR_B2B';
+
+export interface DailyMission {
+  id: string;
+  day: number;
+  type: DailyMissionType;
+  titleEn: string;
+  titleId: string;
+  descriptionEn: string;
+  descriptionId: string;
+  recipeId?: string;
+  minQualityScore?: number;
+  target: number;
+  current: number;
+  completed: boolean;
+  claimed: boolean;
+  rewardCash: number;
+  unitLabelEn: string;
+  unitLabelId: string;
+}
+
 export type TutorialStep =
   | 'NONE'
   | 'BUY_INGREDIENTS'
@@ -658,6 +686,7 @@ export interface SaveSnapshot {
   franchiseBranches?: FranchiseBranch[];
   endlessMasteryUnlocked?: boolean;
   prestigeLevel?: number;
+  dailyMissions?: DailyMission[];
   supplierRelationships?: Record<string, SupplierRelationshipState>;
   activeSupplierDeals?: Record<string, ActiveSupplierDeal>;
   storeTimeRemainingSec: number;

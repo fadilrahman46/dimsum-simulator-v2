@@ -6,6 +6,7 @@ import { BusinessSetupModal } from '../src/components/BusinessSetupModal';
 import { CashierModal } from '../src/components/CashierModal';
 import { CookingMiniGamesModal } from '../src/components/CookingMiniGamesModal';
 import { CustomerFeedbackPopups } from '../src/components/CustomerFeedbackPopups';
+import { DailyMissionsDashboard } from '../src/components/DailyMissionsDashboard';
 import { FinanceDashboardModal } from '../src/components/FinanceDashboardModal';
 import { GameHud } from '../src/components/GameHud';
 import { InventoryModal } from '../src/components/InventoryModal';
@@ -912,5 +913,194 @@ describe('Dimsumpreneur UI DOM E2E Interaction Suite', () => {
     expect(useGameStore.getState().endlessMasteryUnlocked).toBe(true);
     expect(useGameStore.getState().prestigeLevel).toBe(1);
     expect(container.textContent).toContain('Rank ★1');
+  });
+
+  it('renders Daily Missions in GameHud and FinanceDashboardModal and reflects auto-granted bonus currency cleanly', async () => {
+    await useGameStore.getState().startNewGame({
+      name: 'Warung Misi',
+      concept: 'balanced',
+      targetMarket: 'general',
+      difficulty: 'easy',
+      enableTutorial: false,
+    });
+
+    useGameStore.setState({
+      cashBalance: 100_000,
+      dailyMissions: [
+        {
+          id: 'ui-dm-1',
+          day: 1,
+          type: 'SELL_RECIPE_PCS',
+          recipeId: 'shrimp_veg',
+          titleEn: 'Sell 50 Shrimp Dumplings',
+          titleId: 'Jual 50 Pangsit Udang',
+          descriptionEn: 'Sell 50 pcs.',
+          descriptionId: 'Jual 50 pcs.',
+          target: 50,
+          current: 40,
+          completed: false,
+          claimed: false,
+          rewardCash: 30_000,
+          unitLabelEn: 'pcs',
+          unitLabelId: 'pcs',
+        },
+        {
+          id: 'ui-dm-2',
+          day: 1,
+          type: 'PACKAGE_BOXES',
+          titleEn: 'Pack 4 Fresh Boxes',
+          titleId: 'Kemas 4 Kotak Siap Jual',
+          descriptionEn: 'Pack 4 boxes.',
+          descriptionId: 'Kemas 4 kotak.',
+          target: 4,
+          current: 4,
+          completed: true,
+          claimed: false,
+          rewardCash: 16_000,
+          unitLabelEn: 'boxes',
+          unitLabelId: 'kotak',
+        },
+        {
+          id: 'ui-dm-3',
+          day: 1,
+          type: 'HIGH_QC_BATCH',
+          minQualityScore: 85,
+          titleEn: 'Chef Craft: 1 Batch QC ≥ 85',
+          titleId: 'Kualitas Prima: 1 Batch QC ≥ 85',
+          descriptionEn: 'High QC batch.',
+          descriptionId: 'Batch QC tinggi.',
+          target: 1,
+          current: 0,
+          completed: false,
+          claimed: false,
+          rewardCash: 15_000,
+          unitLabelEn: 'batch',
+          unitLabelId: 'batch',
+        },
+      ],
+    });
+
+    const joystickRef: React.MutableRefObject<JoystickInputRef> = {
+      current: { dx: 0, dy: 0 },
+    };
+    renderElement(<GameHud joystickRef={joystickRef} />);
+
+    expect(container.textContent).toContain('Daily Missions');
+    expect(container.textContent).toContain('Sell 50 Shrimp Dumplings');
+    expect(container.textContent).toContain('Pack 4 Fresh Boxes');
+    expect(container.textContent).toContain('Chef Craft: 1 Batch QC ≥ 85');
+
+    // Progressing Shrimp mission to 50 automatically grants both Shrimp (+30k) and any pending completed mission (+16k)
+    let rewardRes!: ReturnType<ReturnType<typeof useGameStore.getState>['trackDailyMissionProgress']>;
+    act(() => {
+      rewardRes = useGameStore.getState().trackDailyMissionProgress({
+        type: 'SALE',
+        recipeId: 'shrimp_veg',
+        pcsSold: 10,
+        boxesSold: 1,
+        revenueAmount: 25_000,
+        orderType: 'DIRECT',
+      });
+    });
+    expect(rewardRes.bonusGranted).toBe(46_000);
+    expect(useGameStore.getState().cashBalance).toBe(146_000);
+
+    // Live HUD updates automatically via Zustand subscription
+    expect(container.textContent).toContain('2/3');
+    expect(container.textContent).toContain('Bonus Added +Rp30.000');
+
+    // Open FinanceDashboardModal and verify DailyMissionsDashboard status is displayed in Report tab
+    renderElement(<FinanceDashboardModal />);
+    expect(container.textContent).toContain('Daily Missions');
+    expect(container.textContent).toContain('Day 1');
+    expect(container.textContent).toContain('Bonus Added to Wallet');
+  });
+
+  it('renders dedicated DailyMissionsDashboard with 3 goals, completion status, and interactive claimable reward button', async () => {
+    await useGameStore.getState().startNewGame({
+      name: 'Warung Dashboard Misi',
+      concept: 'balanced',
+      targetMarket: 'general',
+      difficulty: 'easy',
+      enableTutorial: false,
+    });
+
+    useGameStore.setState({
+      cashBalance: 100_000,
+      dailyMissions: [
+        {
+          id: 'dash-dm-1',
+          day: 1,
+          type: 'SELL_RECIPE_PCS',
+          recipeId: 'shrimp_veg',
+          titleEn: 'Sell 50 Shrimp Dumplings',
+          titleId: 'Jual 50 Pangsit Udang',
+          descriptionEn: 'Sell 50 pcs.',
+          descriptionId: 'Jual 50 pcs.',
+          target: 50,
+          current: 50,
+          completed: true,
+          claimed: false,
+          rewardCash: 30_000,
+          unitLabelEn: 'pcs',
+          unitLabelId: 'pcs',
+        },
+        {
+          id: 'dash-dm-2',
+          day: 1,
+          type: 'PACKAGE_BOXES',
+          titleEn: 'Pack 4 Fresh Boxes',
+          titleId: 'Kemas 4 Kotak Siap Jual',
+          descriptionEn: 'Pack 4 boxes.',
+          descriptionId: 'Kemas 4 kotak.',
+          target: 4,
+          current: 4,
+          completed: true,
+          claimed: true,
+          rewardCash: 16_000,
+          unitLabelEn: 'boxes',
+          unitLabelId: 'kotak',
+        },
+        {
+          id: 'dash-dm-3',
+          day: 1,
+          type: 'HIGH_QC_BATCH',
+          minQualityScore: 85,
+          titleEn: 'Chef Craft: 1 Batch QC ≥ 85',
+          titleId: 'Kualitas Prima: 1 Batch QC ≥ 85',
+          descriptionEn: 'High QC batch.',
+          descriptionId: 'Batch QC tinggi.',
+          target: 1,
+          current: 0,
+          completed: false,
+          claimed: false,
+          rewardCash: 15_000,
+          unitLabelEn: 'batch',
+          unitLabelId: 'batch',
+        },
+      ],
+    });
+
+    renderElement(<DailyMissionsDashboard />);
+
+    expect(container.textContent).toContain('Daily Missions');
+    expect(container.textContent).toContain('2/3 Completed');
+    expect(container.textContent).toContain('Sell 50 Shrimp Dumplings');
+    expect(container.textContent).toContain('Pack 4 Fresh Boxes');
+    expect(container.textContent).toContain('Chef Craft: 1 Batch QC ≥ 85');
+
+    // Explicit completion status labels
+    expect(container.textContent).toContain('Completed · Ready to Claim');
+    expect(container.textContent).toContain('Completed · Bonus Claimed');
+    expect(container.textContent).toContain('In Progress');
+
+    // Clicking the claimable reward button claims the completed mission and credits the wallet
+    clickButton(/Claim Reward \+Rp30\.000/);
+    expect(useGameStore.getState().cashBalance).toBe(130_000);
+    expect(useGameStore.getState().dailyMissions.find((m) => m.id === 'dash-dm-1')?.claimed).toBe(
+      true,
+    );
+    expect(container.textContent).toContain('Bonus Added to Wallet');
+    expect(container.textContent).not.toContain('Ready to Claim');
   });
 });

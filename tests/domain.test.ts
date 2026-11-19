@@ -57,6 +57,11 @@ import {
   spawnCustomerAgent,
 } from '../src/domain/customerEngine';
 import {
+  applyDailyMissionProgress,
+  claimDailyMissionReward,
+  generateDailyMissions,
+} from '../src/domain/dailyMissionsEngine';
+import {
   ENDLESS_MASTERY_ACTIVATION_COST,
   canUnlockEndlessMastery,
   computeBusinessLevel,
@@ -1696,5 +1701,154 @@ describe('Dimsumpreneur Domain Engine', () => {
     expect(upgradedDeco.hasDiningRug).toBe(true);
     expect(upgradedDeco.hasFestivalBanner).toBe(true);
   });
+
+  it('generates 3 distinct randomized Daily Missions from unlocked recipes, tracks gameplay events, prevents double-claims, and migrates legacy saves', () => {
+    // 1. Fixed RNG sequence guarantees deterministic variety across 3 unique types
+    let seed = 0.12;
+    const seqRng = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+
+    const missions = generateDailyMissions({
+      day: 3,
+      businessLevel: 2,
+      recipes: INITIAL_RECIPES,
+      upgrades: { ...createDefaultUpgrades(), steamer: 2 },
+      rng: seqRng,
+    });
+    expect(missions).toHaveLength(3);
+    const uniqueTypes = new Set(missions.map((m) => m.type));
+    expect(uniqueTypes.size).toBe(3);
+
+    const unlockedIds = new Set(INITIAL_RECIPES.filter((r) => r.unlocked).map((r) => r.id));
+    for (const m of missions) {
+      expect(m.day).toBe(3);
+      expect(m.completed).toBe(false);
+      expect(m.claimed).toBe(false);
+      expect(m.rewardCash).toBeGreaterThanOrEqual(10_000);
+      if (m.recipeId) {
+        expect(unlockedIds.has(m.recipeId)).toBe(true);
+      }
+    }
+
+    // 2. Progress tracking across COOK_QC, PACKAGE, and SALE (e.g. Sell 50 Shrimp Dumplings)
+    const sampleMissions = [
+      {
+        id: 'm-shrimp',
+        day: 1,
+        type: 'SELL_RECIPE_PCS' as const,
+        recipeId: 'shrimp_veg',
+        titleEn: 'Sell 50 Shrimp Vegetable Dimsum',
+        titleId: 'Jual 50 Dimsum Udang Sayur',
+        descriptionEn: 'Sell 50 pcs.',
+        descriptionId: 'Jual 50 pcs.',
+        target: 50,
+        current: 0,
+        completed: false,
+        claimed: false,
+        rewardCash: 34_500,
+        unitLabelEn: 'pcs',
+        unitLabelId: 'pcs',
+      },
+      {
+        id: 'm-qc',
+        day: 1,
+        type: 'HIGH_QC_BATCH' as const,
+        minQualityScore: 85,
+        titleEn: 'Chef Craft: 1 Batch QC >= 85',
+        titleId: 'Kualitas Prima: 1 Batch QC >= 85',
+        descriptionEn: 'High QC',
+        descriptionId: 'QC Tinggi',
+        target: 1,
+        current: 0,
+        completed: false,
+        claimed: false,
+        rewardCash: 15_000,
+        unitLabelEn: 'batch',
+        unitLabelId: 'batch',
+      },
+      {
+        id: 'm-pkg',
+        day: 1,
+        type: 'PACKAGE_BOXES' as const,
+        titleEn: 'Pack 4 Fresh Boxes',
+        titleId: 'Kemas 4 Kotak Siap Jual',
+        descriptionEn: 'Pack 4 boxes',
+        descriptionId: 'Kemas 4 kotak',
+        target: 4,
+        current: 0,
+        completed: false,
+        claimed: false,
+        rewardCash: 16_000,
+        unitLabelEn: 'boxes',
+        unitLabelId: 'kotak',
+      },
+    ];
+
+    // Cannot claim incomplete mission
+    expect(claimDailyMissionReward(sampleMissions, 'm-shrimp').ok).toBe(false);
+
+    const afterCook = applyDailyMissionProgress(sampleMissions, {
+      type: 'COOK_QC',
+      pcsProduced: 50,
+      qualityScore: 91,
+      passedQc: true,
+    });
+    expect(afterCook.newlyCompleted.map((m) => m.id)).toEqual(['m-qc']);
+
+    const afterPkg = applyDailyMissionProgress(afterCook.missions, {
+      type: 'PACKAGE',
+      boxesPackaged: 4,
+    });
+    expect(afterPkg.newlyCompleted.map((m) => m.id)).toEqual(['m-pkg']);
+
+    // Selling unrelated recipe does not progress Shrimp mission
+    const afterChickenSale = applyDailyMissionProgress(afterPkg.missions, {
+      type: 'SALE',
+      recipeId: 'chicken_carrot',
+      pcsSold: 16,
+      boxesSold: 2,
+      revenueAmount: 30_000,
+      orderType: 'DIRECT',
+    });
+    expect(afterChickenSale.missions.find((m) => m.id === 'm-shrimp')?.current).toBe(0);
+
+    // Selling 50 Shrimp pcs completes Shrimp mission
+    const afterShrimpSale = applyDailyMissionProgress(afterChickenSale.missions, {
+      type: 'SALE',
+      recipeId: 'shrimp_veg',
+      pcsSold: 50,
+      boxesSold: 5,
+      revenueAmount: 100_000,
+      orderType: 'DIRECT',
+    });
+    expect(afterShrimpSale.newlyCompleted.map((m) => m.id)).toEqual(['m-shrimp']);
+    expect(afterShrimpSale.missions.find((m) => m.id === 'm-shrimp')?.completed).toBe(true);
+
+    // Claim works once & blocks duplicate claims
+    const firstClaim = claimDailyMissionReward(afterShrimpSale.missions, 'm-shrimp');
+    expect(firstClaim.ok).toBe(true);
+    expect(firstClaim.rewardCash).toBe(34_500);
+    expect(claimDailyMissionReward(firstClaim.missions, 'm-shrimp').ok).toBe(false);
+
+    // 3. Legacy save migration backfills 3 Daily Missions automatically
+    const migrated = migrateSaveSnapshot({
+      version: 1,
+      currentDay: 4,
+      cashBalance: 120_000,
+      business: {
+        id: 'b-dm-mig',
+        name: 'Migrated Outlet',
+        concept: 'balanced',
+        targetMarket: 'general',
+        level: 2,
+        reputation: 65,
+        createdAt: 1,
+      },
+    });
+    expect(migrated?.dailyMissions).toHaveLength(3);
+  });
 });
+
 

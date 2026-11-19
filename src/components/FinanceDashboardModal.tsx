@@ -54,6 +54,7 @@ import { canPurchaseUpgrade } from '../domain/upgradeEngine';
 import { t, translateStageLabel } from '../i18n/translations';
 import { useGameStore } from '../store/useGameStore';
 import type { AchievementCategory, AchievementTier, KitchenHelperRole } from '../types/game';
+import { DailyMissionsDashboard } from './DailyMissionsDashboard';
 import { StaffSkillTreePanel } from './StaffSkillTreePanel';
 
 export const FinanceDashboardModal: React.FC = () => {
@@ -438,6 +439,8 @@ export const FinanceDashboardModal: React.FC = () => {
                   })}
                 </div>
               </div>
+
+              <DailyMissionsDashboard variant="dashboard" />
             </>
           )}
 

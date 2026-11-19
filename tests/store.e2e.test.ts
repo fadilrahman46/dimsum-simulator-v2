@@ -907,4 +907,169 @@ describe('Dimsumpreneur Store Integration & Full E2E Lifecycle', () => {
     expect(reloaded.activeFestival?.id).toBe('shrimp_fest');
     expect(ENDLESS_MASTERY_ACTIVATION_COST).toBe(150_000);
   });
+
+  it('generates 3 Daily Missions on Day 1, progresses them via gameplay & trackDailyMissionProgress, auto-grants idempotent bonus currency, and rolls 3 new missions on Day 2', async () => {
+    // 1. Starter game gets 3 randomized Day 1 Daily Missions
+    const day1Missions = useGameStore.getState().dailyMissions;
+    expect(day1Missions).toHaveLength(3);
+    expect(new Set(day1Missions.map((m) => m.type)).size).toBe(3);
+
+    // 2. Pin concrete missions (including 'Sell 50 Shrimp Vegetable Dimsum') and sell matching stock
+    useGameStore.setState({
+      cashBalance: 100_000,
+      activeDailyEvent: null,
+      dailyMissions: [
+        {
+          id: 'dm-d1-sell-shrimp',
+          day: 1,
+          type: 'SELL_RECIPE_PCS',
+          recipeId: 'shrimp_veg',
+          titleEn: 'Sell 50 Shrimp Vegetable Dimsum',
+          titleId: 'Jual 50 Dimsum Udang Sayur',
+          descriptionEn: 'Sell 50 pcs.',
+          descriptionId: 'Jual 50 pcs.',
+          target: 50,
+          current: 40,
+          completed: false,
+          claimed: false,
+          rewardCash: 34_500,
+          unitLabelEn: 'pcs',
+          unitLabelId: 'pcs',
+        },
+        {
+          id: 'dm-d1-serve-cust',
+          day: 1,
+          type: 'SERVE_CUSTOMERS',
+          titleEn: 'Serve 3 Orders Today',
+          titleId: 'Layani 3 Pesanan Hari Ini',
+          descriptionEn: 'Serve 3 orders.',
+          descriptionId: 'Layani 3 pesanan.',
+          target: 3,
+          current: 2,
+          completed: false,
+          claimed: false,
+          rewardCash: 17_500,
+          unitLabelEn: 'orders',
+          unitLabelId: 'pesanan',
+        },
+        {
+          id: 'dm-d1-pkg',
+          day: 1,
+          type: 'PACKAGE_BOXES',
+          titleEn: 'Pack 4 Fresh Boxes',
+          titleId: 'Kemas 4 Kotak Siap Jual',
+          descriptionEn: 'Pack 4 boxes.',
+          descriptionId: 'Kemas 4 kotak.',
+          target: 4,
+          current: 0,
+          completed: false,
+          claimed: false,
+          rewardCash: 16_000,
+          unitLabelEn: 'boxes',
+          unitLabelId: 'kotak',
+        },
+      ],
+      productBatches: [
+        {
+          id: 'pb-shrimp-50',
+          productionBatchId: 'prod-sh-50',
+          recipeId: 'shrimp_veg',
+          packagingTypeId: 'family_box',
+          boxesProduced: 2,
+          boxesAvailable: 2,
+          pcsPerBox: 10,
+          unitCostPerBox: 15_000,
+          sellingPricePerBox: 25_000,
+          qualityScore: 90,
+          status: 'PACKAGED',
+          producedDay: 1,
+          expiryDay: 3,
+        },
+      ],
+      customers: [
+        {
+          id: 'cust-shrimp',
+          archetypeId: 'family',
+          name: 'Ibu Sari',
+          requestedRecipeId: 'shrimp_veg',
+          requestedBoxType: 'family_box',
+          quantityBoxes: 1,
+          maxBudget: 35_000,
+          patienceMax: 30,
+          patienceRemaining: 28,
+          lifecycle: 'WAITING_ORDER',
+          diningMode: 'TAKEAWAY',
+          spawnTimeSec: 0,
+          dialogueEn: '10 pcs shrimp dumplings please!',
+          dialogueId: '10 pcs dimsum udang ya!',
+          seatSlot: 0,
+        },
+      ],
+    });
+
+    // Serving 1 box (10 pcs) finishes both Shrimp (40 -> 50) & Serve Customers (2 -> 3)
+    // and automatically grants Rp34.500 + Rp17.500 bonus currency to the player's wallet!
+    expect(useGameStore.getState().serveCustomer('cust-shrimp', 'pb-shrimp-50').ok).toBe(true);
+    let state = useGameStore.getState();
+    const shrimpMission = state.dailyMissions.find((m) => m.id === 'dm-d1-sell-shrimp')!;
+    const serveMission = state.dailyMissions.find((m) => m.id === 'dm-d1-serve-cust')!;
+    const pkgMission = state.dailyMissions.find((m) => m.id === 'dm-d1-pkg')!;
+    expect(shrimpMission.current).toBe(50);
+    expect(shrimpMission.completed).toBe(true);
+    expect(shrimpMission.claimed).toBe(true);
+    expect(serveMission.completed).toBe(true);
+    expect(serveMission.claimed).toBe(true);
+    expect(pkgMission.completed).toBe(false);
+    expect(pkgMission.claimed).toBe(false);
+
+    // 100_000 start + 25_000 sale + 34_500 shrimp mission bonus + 17_500 serve mission bonus = 177_000
+    expect(state.cashBalance).toBe(177_000);
+
+    // Manual claim fallback cannot double-pay an already auto-granted mission
+    expect(useGameStore.getState().claimDailyMission('dm-d1-sell-shrimp').ok).toBe(false);
+    expect(useGameStore.getState().claimAllDailyMissions().ok).toBe(false);
+    expect(useGameStore.getState().cashBalance).toBe(177_000);
+
+    // Direct trackDailyMissionProgress action progresses & auto-grants remaining packaging mission
+    const trackPartial = useGameStore.getState().trackDailyMissionProgress({
+      type: 'PACKAGE',
+      boxesPackaged: 2,
+    });
+    expect(trackPartial.bonusGranted).toBe(0);
+    expect(trackPartial.newlyRewarded).toHaveLength(0);
+    expect(
+      useGameStore.getState().dailyMissions.find((m) => m.id === 'dm-d1-pkg')?.current,
+    ).toBe(2);
+
+    const trackComplete = useGameStore.getState().trackDailyMissionProgress({
+      type: 'PACKAGE',
+      boxesPackaged: 2,
+    });
+    expect(trackComplete.bonusGranted).toBe(16_000);
+    expect(trackComplete.newlyRewarded.map((m) => m.id)).toEqual(['dm-d1-pkg']);
+    state = useGameStore.getState();
+    expect(state.cashBalance).toBe(193_000);
+    expect(state.dailyMissions.find((m) => m.id === 'dm-d1-pkg')?.claimed).toBe(true);
+
+    // Repeating event after completion is idempotent (no duplicate bonus)
+    const trackRepeat = useGameStore.getState().trackDailyMissionProgress({
+      type: 'PACKAGE',
+      boxesPackaged: 4,
+    });
+    expect(trackRepeat.bonusGranted).toBe(0);
+    expect(useGameStore.getState().cashBalance).toBe(193_000);
+
+    const missionBonusTxs = state.transactions.filter(
+      (tx) => tx.category === 'GOAL_BONUS' && tx.referenceId.startsWith('daily-mission-day-1-'),
+    );
+    expect(missionBonusTxs).toHaveLength(3);
+
+    // Advancing to Day 2 generates 3 fresh Day 2 missions
+    useGameStore.getState().closeStoreAndGenerateReport();
+    useGameStore.getState().advanceToNextDay();
+    const day2State = useGameStore.getState();
+    expect(day2State.currentDay).toBe(2);
+    expect(day2State.dailyMissions).toHaveLength(3);
+    expect(day2State.dailyMissions.every((m) => m.day === 2 && m.current === 0 && !m.claimed)).toBe(true);
+  });
 });

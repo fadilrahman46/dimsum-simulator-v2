@@ -44,7 +44,19 @@ async function waitForServer(url, serverProc, timeoutMs = 25_000) {
 
 async function auditViewportLayout(page, label, width, height) {
   await page.setViewportSize({ width, height });
-  await page.waitForTimeout(350);
+  await page
+    .waitForFunction(
+      ({ w, h }) => {
+        const c = document.querySelector('[data-testid="dimsum-world-canvas"] canvas');
+        if (!c) return false;
+        const r = c.getBoundingClientRect();
+        return r.width >= w - 2 && r.height >= h - 2;
+      },
+      { w: width, h: height },
+      { timeout: 3_000 },
+    )
+    .catch(() => {});
+  await page.waitForTimeout(250);
 
   const metrics = await page.evaluate(() => {
     const vw = window.innerWidth;
@@ -54,7 +66,7 @@ async function auditViewportLayout(page, label, width, height) {
     const canvasRect = canvas ? canvas.getBoundingClientRect() : null;
 
     const pauseBtn = Array.from(document.querySelectorAll('button')).find((b) =>
-      /Menu|Jeda/i.test(b.textContent || ''),
+      /Menu|Jeda/i.test(b.getAttribute('aria-label') || b.textContent || ''),
     );
     const hidePanelBtn = Array.from(document.querySelectorAll('button')).find((b) =>
       /Hide Left Panel|Show Left Panel|Panel Kiri/i.test(b.getAttribute('aria-label') || b.textContent || ''),
@@ -103,20 +115,22 @@ async function auditViewportLayout(page, label, width, height) {
     metrics.canvasRect && metrics.canvasRect.width >= width - 2 && metrics.canvasRect.height >= height - 2,
     `[${label}] WebGL canvas should fill viewport, got ${JSON.stringify(metrics.canvasRect)}`,
   );
-  assert.ok(metrics.pauseBtn?.inViewport, `[${label}] Pause/Menu button clipped out of viewport`);
-  assert.ok(metrics.hidePanelBtn?.inViewport, `[${label}] Hide Left Panel button clipped out of viewport`);
-  assert.ok(metrics.quickDockBtn?.inViewport, `[${label}] Quick Dock toggle clipped out of viewport`);
-  assert.ok(metrics.zoomBtn?.inViewport, `[${label}] 3D Camera Zoom control clipped out of viewport`);
+  assert.ok(metrics.pauseBtn?.inViewport, `[${label}] Pause/Menu button clipped: ${JSON.stringify(metrics.pauseBtn)}`);
+  assert.ok(metrics.hidePanelBtn?.inViewport, `[${label}] Hide Left Panel button clipped: ${JSON.stringify(metrics.hidePanelBtn)}`);
+  assert.ok(metrics.quickDockBtn?.inViewport, `[${label}] Quick Dock toggle clipped: ${JSON.stringify(metrics.quickDockBtn)}`);
+  assert.ok(metrics.zoomBtn?.inViewport, `[${label}] 3D Camera Zoom control clipped: ${JSON.stringify(metrics.zoomBtn)}`);
 
-  // Verify Left Panel Toggle cleanly hides & restores left panel
+  // Verify Left Panel Toggle cleanly hides & restores left panel (including Daily Missions & Daily Goals)
   await page.getByRole('button', { name: /Hide Left Panel/i }).click();
   await page.waitForTimeout(150);
   const afterHideText = await page.locator('body').innerText();
   assert.ok(!afterHideText.includes('Daily Goals'), `[${label}] Left panel should hide when toggled`);
+  assert.ok(!afterHideText.includes('Daily Missions'), `[${label}] Daily Missions should hide with left panel`);
   await page.getByRole('button', { name: /Show Left Panel/i }).click();
   await page.waitForTimeout(150);
   const afterShowText = await page.locator('body').innerText();
   assert.ok(afterShowText.includes('Daily Goals'), `[${label}] Left panel should reappear when toggled`);
+  assert.ok(afterShowText.includes('Daily Missions'), `[${label}] Daily Missions should reappear when toggled`);
 
   // Open a modal at this viewport and assert it stays inside viewport bounds
   await page.getByRole('button', { name: /^Market$/i }).click();
@@ -220,7 +234,7 @@ async function runBrowserQa() {
     // 2. Navigate TitleScreen -> BusinessSetupModal -> Gameplay
     await page.getByRole('button', { name: /Start New Business/i }).click();
     await page.waitForSelector('input[type="text"]');
-    await page.getByRole('button', { name: /Launch Outlet/i }).click();
+    await page.getByRole('button', { name: /Open Kitchen & Begin Day 1/i }).click();
     await page.waitForTimeout(300);
 
     const skipBtn = page.getByRole('button', { name: /^Skip$/i });
@@ -232,7 +246,7 @@ async function runBrowserQa() {
     // 3. Test 3D Station Click Raycasting on real canvas coordinates
     const stationChecks = [
       { id: 'market', heading: /Ingredient & Packaging Market/i },
-      { id: 'prep', heading: /Healthy Dimsum Recipe Book/i },
+      { id: 'prep', heading: /Preparation, Recipe Book & R&D/i },
       { id: 'cashier', heading: /Cashier & Customer Service/i },
       { id: 'board', heading: /Business Report & Facility Upgrades/i },
     ];
@@ -265,10 +279,10 @@ async function runBrowserQa() {
     assert.equal(statsBeforeUpgrade.plantCount, 1);
 
     // Purchase Shop Interior & Lanterns Lv 2 (cost Rp80.000, starter cash is Rp100.000)
-    const decorCard = page.locator('div', { hasText: /Shop Interior & Lanterns/i }).filter({
-      has: page.getByRole('button', { name: /Upgrade/i }),
-    }).last();
-    await decorCard.getByRole('button', { name: /Upgrade/i }).click();
+    await page
+      .locator('div.rounded-xl', { hasText: /Shop Interior & Lanterns/i })
+      .getByRole('button', { name: /Upgrade/i })
+      .click();
     await page.waitForTimeout(250);
 
     const statsAfterUpgrade = await page.evaluate(() => window.__DIMSUM_QA__?.getSceneStats());

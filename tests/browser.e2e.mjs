@@ -47,6 +47,99 @@ function rectsOverlap(a, b) {
   return !(a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1);
 }
 
+async function isShown(page, testId) {
+  return page.getByTestId(testId).isVisible().catch(() => false);
+}
+
+async function verifySplitLeftPanels(page, label) {
+  const infoToggle = page.getByTestId('info-panel-toggle');
+  assert.equal(await infoToggle.getAttribute('aria-pressed'), 'true', `[${label}] Info panel should start ON`);
+  assert.ok(await isShown(page, 'info-panel-level'), `[${label}] Info panel must show level strip`);
+
+  // 1. Info panel switches OFF without touching Missions/Goals
+  await infoToggle.click();
+  await page.waitForTimeout(150);
+  assert.equal(await infoToggle.getAttribute('aria-pressed'), 'false');
+  assert.equal(await isShown(page, 'info-panel-level'), false, `[${label}] Level strip must hide when Info is OFF`);
+  assert.equal(await isShown(page, 'info-panel-events'), false, `[${label}] Event/challenge must hide when Info is OFF`);
+  assert.ok(await isShown(page, 'daily-missions-card'), `[${label}] Daily Missions must stay when Info is OFF`);
+  assert.ok(await isShown(page, 'daily-goals-card'), `[${label}] Daily Goals must stay when Info is OFF`);
+
+  // 2 & 3. Missions and Goals minimize/expand independently of each other
+  for (const [testId, otherId] of [
+    ['daily-missions-card', 'daily-goals-card'],
+    ['daily-goals-card', 'daily-missions-card'],
+  ]) {
+    const toggle = page.getByTestId(testId).locator('button[aria-expanded]').first();
+    const other = page.getByTestId(otherId).locator('button[aria-expanded]').first();
+    const otherBefore = await other.getAttribute('aria-expanded');
+    const before = await toggle.getAttribute('aria-expanded');
+    const heightBefore = (await page.getByTestId(testId).boundingBox()).height;
+    await toggle.click();
+    await page.waitForTimeout(150);
+    const after = await toggle.getAttribute('aria-expanded');
+    const heightAfter = (await page.getByTestId(testId).boundingBox()).height;
+    assert.notEqual(after, before, `[${label}] ${testId} must toggle minimize state`);
+    assert.ok(
+      after === 'false' ? heightAfter < heightBefore : heightAfter > heightBefore,
+      `[${label}] ${testId} height must shrink when minimized / grow when expanded (${heightBefore} -> ${heightAfter})`,
+    );
+    assert.equal(await other.getAttribute('aria-expanded'), otherBefore, `[${label}] ${otherId} must not change`);
+    await toggle.click(); // restore
+    await page.waitForTimeout(100);
+  }
+
+  await infoToggle.click();
+  await page.waitForTimeout(150);
+  assert.ok(await isShown(page, 'info-panel-level'), `[${label}] Info panel must return when switched ON`);
+}
+
+/** Rotate prompt is for smartphones only: real phone emulation (touch + small physical screen). */
+async function verifySmartphoneRotateFlow(browser, baseUrl) {
+  const phone = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    screen: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const p = await phone.newPage();
+  await p.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await p.waitForTimeout(600);
+  assert.ok(await isShown(p, 'rotate-to-landscape-overlay'), 'Smartphone portrait must show Rotate-to-Landscape overlay');
+
+  await p.setViewportSize({ width: 844, height: 390 });
+  await p.waitForTimeout(300);
+  assert.equal(await isShown(p, 'rotate-to-landscape-overlay'), false, 'Smartphone landscape must hide the overlay');
+
+  await p.setViewportSize({ width: 390, height: 844 });
+  await p.waitForTimeout(300);
+  assert.ok(await isShown(p, 'rotate-to-landscape-overlay'), 'Turning the phone back to portrait must prompt again');
+  await p.getByTestId('rotate-landscape-btn').click();
+  await p.waitForTimeout(400);
+  // Headless Chromium cannot lock orientation, so the manual-rotate hint must appear instead of failing silently
+  const stillPortraitOverlay = await isShown(p, 'rotate-to-landscape-overlay');
+  if (stillPortraitOverlay) {
+    const hint = await p.locator('[data-testid="rotate-to-landscape-overlay"]').innerText();
+    assert.match(hint, /rotate|rotasi/i);
+    await p.getByTestId('continue-portrait-btn').click();
+    await p.waitForTimeout(150);
+    assert.equal(await isShown(p, 'rotate-to-landscape-overlay'), false, 'Continue in Portrait must dismiss overlay');
+  }
+  await phone.close();
+
+  const tablet = await browser.newContext({
+    viewport: { width: 768, height: 1024 },
+    screen: { width: 768, height: 1024 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const tp = await tablet.newPage();
+  await tp.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await tp.waitForTimeout(600);
+  assert.equal(await isShown(tp, 'rotate-to-landscape-overlay'), false, 'Tablet portrait must not show the smartphone rotate prompt');
+  await tablet.close();
+}
+
 async function auditViewportLayout(page, label, width, height, opts = {}) {
   const { expectRotateOverlay = false, expectJoystick = false } = opts;
   await page.setViewportSize({ width, height });
@@ -89,9 +182,7 @@ async function auditViewportLayout(page, label, width, height, opts = {}) {
     const pauseBtn = Array.from(document.querySelectorAll('button')).find((b) =>
       /Menu|Jeda/i.test(b.getAttribute('aria-label') || b.textContent || ''),
     );
-    const hidePanelBtn = Array.from(document.querySelectorAll('button')).find((b) =>
-      /Hide Left Panel|Show Left Panel|Panel Kiri/i.test(b.getAttribute('aria-label') || b.textContent || ''),
-    );
+    const hidePanelBtn = document.querySelector('[data-testid="info-panel-toggle"]');
     const quickDockBtn = Array.from(document.querySelectorAll('button')).find((b) =>
       /Hide Quick Dock|Show Quick Dock|Pintasan/i.test(b.textContent || ''),
     );
@@ -99,7 +190,7 @@ async function auditViewportLayout(page, label, width, height, opts = {}) {
     const joyEl = document.querySelector('[data-testid="virtual-joystick"]');
     const quickDock = document.querySelector('[data-testid="quick-station-dock"]');
     const cameraBar = document.querySelector('[data-testid="camera-controls-bar"]');
-    const leftScrollBox = document.querySelector('[data-testid="daily-missions-card"]')?.parentElement;
+    const leftScrollBox = document.querySelector('[data-testid="left-panel-stack"]');
 
     const checkBox = (el) => {
       if (!el) return null;
@@ -145,7 +236,7 @@ async function auditViewportLayout(page, label, width, height, opts = {}) {
     `[${label}] WebGL canvas should fill viewport, got ${JSON.stringify(metrics.canvasRect)}`,
   );
   assert.ok(metrics.pauseBtn?.inViewport, `[${label}] Pause/Menu button clipped: ${JSON.stringify(metrics.pauseBtn)}`);
-  assert.ok(metrics.hidePanelBtn?.inViewport, `[${label}] Hide Left Panel button clipped: ${JSON.stringify(metrics.hidePanelBtn)}`);
+  assert.ok(metrics.hidePanelBtn?.inViewport, `[${label}] Info Panel toggle clipped: ${JSON.stringify(metrics.hidePanelBtn)}`);
   assert.ok(metrics.quickDockBtn?.inViewport, `[${label}] Quick Dock toggle clipped: ${JSON.stringify(metrics.quickDockBtn)}`);
   assert.ok(metrics.zoomBtn?.inViewport, `[${label}] 3D Camera Zoom control clipped: ${JSON.stringify(metrics.zoomBtn)}`);
 
@@ -168,17 +259,8 @@ async function auditViewportLayout(page, label, width, height, opts = {}) {
     `[${label}] Camera bar overlaps Quick Dock (${JSON.stringify(metrics.cameraBar)} vs ${JSON.stringify(metrics.quickDock)})`,
   );
 
-  // Verify Left Panel Toggle cleanly hides & restores left panel (including Daily Missions & Daily Goals)
-  await page.getByRole('button', { name: /Hide Left Panel/i }).click();
-  await page.waitForTimeout(150);
-  const afterHideText = await page.locator('body').innerText();
-  assert.ok(!afterHideText.includes('Daily Goals'), `[${label}] Left panel should hide when toggled`);
-  assert.ok(!afterHideText.includes('Daily Missions'), `[${label}] Daily Missions should hide with left panel`);
-  await page.getByRole('button', { name: /Show Left Panel/i }).click();
-  await page.waitForTimeout(150);
-  const afterShowText = await page.locator('body').innerText();
-  assert.ok(afterShowText.includes('Daily Goals'), `[${label}] Left panel should reappear when toggled`);
-  assert.ok(afterShowText.includes('Daily Missions'), `[${label}] Daily Missions should reappear when toggled`);
+  // Left side = 3 independent panels: Info (on/off), Daily Missions (minimize), Daily Goals (minimize)
+  await verifySplitLeftPanels(page, label);
 
   // Open Market modal at this viewport and assert it stays inside viewport bounds
   await page.getByRole('button', { name: /^Market$/i }).click();
@@ -279,21 +361,17 @@ async function runBrowserQa() {
     const canvasShot = await page.locator('[data-testid="dimsum-world-canvas"] canvas').screenshot();
     assert.ok(canvasShot.byteLength > 8_000, '3D canvas screenshot must contain rendered geometry');
 
-    // 1b. Verify TitleScreen Rotate-to-Landscape prompt in Mobile Portrait & clean fit in Mobile Landscape
+    // 1b. Rotate prompt is smartphone-only: a narrowed desktop window must NOT show it
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(200);
     assert.equal(
       await page.getByTestId('rotate-to-landscape-overlay').isVisible(),
-      true,
-      'Mobile portrait TitleScreen must show Rotate-to-Landscape overlay',
+      false,
+      'Narrow desktop window (no touch, large screen) must not show the smartphone rotate prompt',
     );
+    await verifySmartphoneRotateFlow(browser, BASE_URL);
     await page.setViewportSize({ width: 844, height: 390 });
     await page.waitForTimeout(200);
-    assert.equal(
-      await page.getByTestId('rotate-to-landscape-overlay').isVisible(),
-      false,
-      'Rotating to mobile landscape must automatically dismiss Rotate-to-Landscape overlay',
-    );
     const landscapeTitleCard = await page.evaluate(() => {
       const card = document.querySelector('h1')?.closest('div[class*="rounded-2xl"]');
       if (!card) return null;
@@ -370,7 +448,7 @@ async function runBrowserQa() {
 
     // 5. Audit responsive HUD & modal layouts across Mobile Portrait, Mobile Landscape, Tablet, 720p, and 1080p
     const viewports = [
-      { label: 'mobile-portrait-360x780', width: 360, height: 780, expectRotateOverlay: true, expectJoystick: true },
+      { label: 'mobile-portrait-360x780', width: 360, height: 780, expectRotateOverlay: false, expectJoystick: true },
       { label: 'mobile-portrait-390x844', width: 390, height: 844, expectRotateOverlay: false, expectJoystick: true },
       { label: 'mobile-landscape-667x375', width: 667, height: 375, expectRotateOverlay: false, expectJoystick: true },
       { label: 'mobile-landscape-844x390', width: 844, height: 390, expectRotateOverlay: false, expectJoystick: true },

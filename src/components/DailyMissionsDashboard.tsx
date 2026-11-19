@@ -86,6 +86,11 @@ export const DailyMissionsDashboard: React.FC<DailyMissionsDashboardProps> = ({
             onClick={onToggleExpanded}
             className="flex-1 flex items-center justify-between gap-2 text-left cursor-pointer min-w-0"
             aria-expanded={expanded}
+            title={
+              expanded
+                ? t(language, 'Minimize Daily Missions', 'Perkecil Misi Harian')
+                : t(language, 'Expand Daily Missions', 'Perluas Misi Harian')
+            }
           >
             <span className="inline-flex items-center gap-1.5 font-bold text-[#244D3B] min-w-0">
               <ListChecks className="w-3.5 h-3.5 text-[#ED9B53] shrink-0" />

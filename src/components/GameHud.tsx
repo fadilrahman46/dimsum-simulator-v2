@@ -48,6 +48,26 @@ interface GameHudProps {
   joystickRef: React.MutableRefObject<JoystickInputRef>;
 }
 
+/** Boolean UI preference kept in localStorage when available (sandboxed frames may block storage). */
+function usePersistedFlag(key: string, fallback: boolean) {
+  const [value, setValue] = useState<boolean>(() => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      return raw === null ? fallback : raw === '1';
+    } catch {
+      return fallback;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, value ? '1' : '0');
+    } catch {
+      // storage unavailable: preference lasts for this session only
+    }
+  }, [key, value]);
+  return [value, setValue] as const;
+}
+
 export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
   const language = useGameStore((s) => s.language);
   const muted = useGameStore((s) => s.muted);
@@ -108,11 +128,12 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
   } = useViewportMode();
 
   const [compactHud, setCompactHud] = useState(isCompactViewport);
-  const [showLeftPanel, setShowLeftPanel] = useState(true);
+  // Left side is split into 3 independent panels; their on/off & minimize states persist per browser
+  const [showInfoPanel, setShowInfoPanel] = usePersistedFlag('dimsum.hud.infoPanel', true);
   const [showQuickBar, setShowQuickBar] = useState(true);
-  const [showMissionsWidget, setShowMissionsWidget] = useState(!isCompactViewport);
+  const [showMissionsWidget, setShowMissionsWidget] = usePersistedFlag('dimsum.hud.missionsExpanded', !isCompactViewport);
   const [showMissionsModal, setShowMissionsModal] = useState(false);
-  const [showGoalsWidget, setShowGoalsWidget] = useState(!isCompactViewport);
+  const [showGoalsWidget, setShowGoalsWidget] = usePersistedFlag('dimsum.hud.goalsExpanded', !isCompactViewport);
   const [showEventDetails, setShowEventDetails] = useState(!isCompactViewport);
   const joyOriginRef = useRef<{ x: number; y: number } | null>(null);
   const [joyKnob, setJoyKnob] = useState({ x: 0, y: 0 });
@@ -262,37 +283,42 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
         <div className="flex flex-col items-start gap-1.5 min-w-0 max-h-full">
           {/* Top-Left Toggle Button + Business Metrics Strip */}
           <div className="flex flex-wrap items-start gap-1.5 sm:gap-2 shrink-0">
+            {/* Panel 1 (Info: level, festival/event, challenge) on/off switch */}
             <button
               type="button"
-              onClick={() => setShowLeftPanel((v) => !v)}
-              aria-expanded={showLeftPanel}
-              aria-pressed={!showLeftPanel}
+              data-testid="info-panel-toggle"
+              onClick={() => setShowInfoPanel((v) => !v)}
+              aria-pressed={showInfoPanel}
               aria-label={t(
                 language,
-                showLeftPanel ? 'Hide Left Panel' : 'Show Left Panel',
-                showLeftPanel ? 'Sembunyikan Panel Kiri' : 'Tampilkan Panel Kiri',
+                showInfoPanel ? 'Info Panel: On (tap to hide)' : 'Info Panel: Off (tap to show)',
+                showInfoPanel ? 'Panel Info: Aktif (ketuk untuk sembunyikan)' : 'Panel Info: Nonaktif (ketuk untuk tampilkan)',
               )}
               className={`pointer-events-auto inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-semibold shadow-sm cursor-pointer whitespace-nowrap transition-colors ${
-                showLeftPanel
+                showInfoPanel
                   ? 'bg-[#FAF5EA] border-[#244D3B]/20 text-[#244D3B] hover:bg-[#D9E8C8]'
                   : 'bg-[#244D3B] border-[#244D3B] text-[#FAF5EA] hover:bg-[#1B3A2C]'
               }`}
             >
-              {showLeftPanel ? (
+              {showInfoPanel ? (
                 <PanelLeftClose className="w-3.5 h-3.5 shrink-0" />
               ) : (
                 <PanelLeftOpen className="w-3.5 h-3.5 shrink-0" />
               )}
-              <span>
-                {showLeftPanel
-                  ? t(language, 'Hide Left Panel', 'Sembunyikan Panel Kiri')
-                  : t(language, 'Show Left Panel', 'Tampilkan Panel Kiri')}
+              <span>{t(language, 'Info', 'Info')}</span>
+              <span
+                className={`px-1 rounded text-[10px] font-bold ${
+                  showInfoPanel ? 'bg-[#D9E8C8] text-[#244D3B]' : 'bg-[#FAF5EA] text-[#244D3B]'
+                }`}
+              >
+                {showInfoPanel ? t(language, 'ON', 'AKTIF') : t(language, 'OFF', 'MATI')}
               </span>
             </button>
 
-            {/* Business Metrics Strip */}
-            {showLeftPanel && (
+            {/* Panel 1 · Info: business level strip */}
+            {showInfoPanel && (
               <div
+                data-testid="info-panel-level"
                 className={`pointer-events-auto flex flex-wrap items-center rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-sm ${
                   isShortLandscape
                     ? 'gap-2 px-2.5 py-1.5 text-[11px]'
@@ -385,8 +411,9 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
             )}
           </div>
 
-          {showLeftPanel && (
-            <div
+          {/* Left panel stack: Info (events) · Daily Missions · Daily Goals, each independently controlled */}
+          <div
+              data-testid="left-panel-stack"
               className={`flex flex-col items-start gap-2 flex-1 min-h-0 overflow-y-auto pr-1 ${
                 isShortLandscape
                   ? 'max-h-[calc(100vh-140px)]'
@@ -395,6 +422,9 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
                     : 'max-h-[45vh] md:max-h-none'
               }`}
             >
+              {/* Panel 1 · Info: festival/rival telemetry + daily event or challenge */}
+              {showInfoPanel && (
+              <div data-testid="info-panel-events" className="flex flex-col items-start gap-2">
               {/* Weekly Festival / Rival Telemetry Card */}
               {(() => {
                 const nextFest = getNextUpcomingFestival(currentDay);
@@ -518,7 +548,10 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
             </div>
           )}
 
-          {/* Daily Missions Card (3 Random Goals Each Day) */}
+              </div>
+              )}
+
+          {/* Panel 2 · Daily Missions (3 random goals each day), minimizable */}
           <DailyMissionsDashboard
             variant="compact"
             expanded={showMissionsWidget}
@@ -526,8 +559,9 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
             onOpenDashboard={() => setShowMissionsModal(true)}
           />
 
-          {/* Daily Goals & Highlighted Bonus Objectives Widget */}
+          {/* Panel 3 · Daily Goals & highlighted bonus objectives, minimizable */}
           <div
+            data-testid="daily-goals-card"
             className={`pointer-events-auto rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-sm px-3.5 py-2.5 text-xs ${
               isShortLandscape ? 'w-60 sm:w-68' : 'w-68 sm:w-80'
             }`}
@@ -537,6 +571,11 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
               onClick={() => setShowGoalsWidget((v) => !v)}
               className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
               aria-expanded={showGoalsWidget}
+              title={
+                showGoalsWidget
+                  ? t(language, 'Minimize Daily Goals', 'Perkecil Target Harian')
+                  : t(language, 'Expand Daily Goals', 'Perluas Target Harian')
+              }
             >
               <span className="inline-flex items-center gap-1.5 font-bold text-[#244D3B]">
                 <Target className="w-3.5 h-3.5 text-[#ED9B53]" />
@@ -730,7 +769,6 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
             )}
             </div>
           </div>
-          )}
         </div>
 
         {/* Utility Buttons */}

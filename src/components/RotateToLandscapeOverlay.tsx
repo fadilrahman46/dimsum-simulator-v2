@@ -1,43 +1,32 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { RotateCw, Smartphone } from 'lucide-react';
 import { t } from '../i18n/translations';
 import { useGameStore } from '../store/useGameStore';
-import { useViewportMode } from '../utils/useViewportMode';
+import { enableRotateScreen, useViewportMode } from '../utils/useViewportMode';
 
 export const RotateToLandscapeOverlay: React.FC = () => {
   const language = useGameStore((s) => s.language);
-  const { isMobilePortrait } = useViewportMode();
+  // Smartphones only: tablets, desktops and narrowed desktop windows never see this prompt
+  const { isSmartphonePortrait } = useViewportMode();
   const [dismissed, setDismissed] = useState(false);
   const [manualRotateHint, setManualRotateHint] = useState(false);
+  const [autoLockTried, setAutoLockTried] = useState(false);
+  const [autoLocked, setAutoLocked] = useState(false);
 
-  if (!isMobilePortrait || dismissed) {
+  // Run enable-rotate as soon as a portrait smartphone is detected; succeeds silently in PWA/fullscreen
+  useEffect(() => {
+    if (!isSmartphonePortrait || autoLockTried) return;
+    setAutoLockTried(true);
+    void enableRotateScreen(false).then(setAutoLocked);
+  }, [isSmartphonePortrait, autoLockTried]);
+
+  if (!isSmartphonePortrait || dismissed || autoLocked) {
     return null;
   }
 
   const handleRotateToLandscape = async () => {
-    try {
-      if (
-        typeof document !== 'undefined' &&
-        !document.fullscreenElement &&
-        typeof document.documentElement.requestFullscreen === 'function'
-      ) {
-        await document.documentElement.requestFullscreen().catch(() => undefined);
-      }
-
-      const orientation = (
-        screen as Screen & {
-          orientation?: ScreenOrientation & { lock?: (mode: string) => Promise<void> };
-        }
-      ).orientation;
-
-      if (orientation && typeof orientation.lock === 'function') {
-        await orientation.lock('landscape');
-        return;
-      }
-    } catch {
-      // Browser does not allow programmatic orientation lock outside PWA/fullscreen
-    }
-    setManualRotateHint(true);
+    const locked = await enableRotateScreen(true);
+    if (!locked) setManualRotateHint(true);
   };
 
   return (

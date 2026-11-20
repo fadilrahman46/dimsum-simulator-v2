@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { RotateCw, Smartphone } from 'lucide-react';
 import { t } from '../i18n/translations';
 import { useGameStore } from '../store/useGameStore';
-import { enableRotateScreen, useViewportMode } from '../utils/useViewportMode';
+import { enableRotateScreen, setKeepPortrait, useViewportMode } from '../utils/useViewportMode';
 
 export const RotateToLandscapeOverlay: React.FC = () => {
   const language = useGameStore((s) => s.language);
@@ -100,8 +100,8 @@ export const RotateToLandscapeOverlay: React.FC = () => {
           <p className="text-xs text-[#355446] leading-relaxed">
             {t(
               language,
-              'Dimsumpreneur’s 3D kitchen, station controls, and dual-thumb gameplay look and feel best in landscape orientation.',
-              'Dapur 3D Dimsumpreneur, kontrol stasiun, dan navigasi sentuh paling lega dimainkan dalam posisi lanskap (mendatar).',
+              'Tap anywhere to switch to fullscreen landscape. Dimsumpreneur’s 3D kitchen and dual-thumb controls are built for it.',
+              'Ketuk di mana saja untuk pindah ke layar penuh mode lanskap. Dapur 3D dan kontrol dua jempol Dimsumpreneur dirancang untuk mode ini.',
             )}
           </p>
         </div>
@@ -110,8 +110,8 @@ export const RotateToLandscapeOverlay: React.FC = () => {
           <div className="rounded-xl bg-[#FFF3DC] border border-[#ED9B53]/70 px-3 py-2 text-[11px] font-medium text-[#92400E] leading-snug">
             {t(
               language,
-              'Auto-lock is restricted by your browser. Please enable screen auto-rotate and turn your device sideways.',
-              'Rotasi otomatis dibatasi oleh browser. Aktifkan rotasi layar di ponsel lalu miringkan perangkat Anda.',
+              'Your browser blocks auto-rotate and fullscreen (common on iPhone). Turn off rotation lock, tilt your phone sideways, or use Share > Add to Home Screen for fullscreen.',
+              'Browser Anda memblokir rotasi otomatis dan layar penuh (umum di iPhone). Matikan kunci rotasi lalu miringkan ponsel, atau pakai Bagikan > Tambah ke Layar Utama untuk layar penuh.',
             )}
           </div>
         )}
@@ -130,7 +130,11 @@ export const RotateToLandscapeOverlay: React.FC = () => {
           <button
             type="button"
             data-testid="continue-portrait-btn"
-            onClick={() => setDismissed(true)}
+            data-keep-portrait
+            onClick={() => {
+              setKeepPortrait(true);
+              setDismissed(true);
+            }}
             className="w-full py-2.5 px-4 rounded-xl bg-white border border-[#244D3B]/20 hover:bg-[#D9E8C8]/60 text-[#244D3B] font-semibold text-xs cursor-pointer transition-colors"
           >
             {t(language, 'Continue in Portrait', 'Lanjut Mode Potret')}

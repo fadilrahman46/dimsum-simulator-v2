@@ -15,8 +15,11 @@ import { RotateToLandscapeOverlay } from './components/RotateToLandscapeOverlay'
 import { TitleScreen } from './components/TitleScreen';
 import { DimsumWorldCanvas, type JoystickInputRef } from './game/DimsumWorldCanvas';
 import { useGameStore } from './store/useGameStore';
+import { useSmartphoneImmersive } from './utils/useViewportMode';
 
 export default function App() {
+  // Smartphones: first tap switches to fullscreen + landscape
+  useSmartphoneImmersive();
   const initApp = useGameStore((s) => s.initApp);
   const gameState = useGameStore((s) => s.gameState);
   const activeStation = useGameStore((s) => s.activeStation);

@@ -61,6 +61,38 @@ function readViewportMode(): ViewportMode {
   };
 }
 
+let keepPortrait = false;
+/** The player chose "Continue in Portrait": stop forcing fullscreen/landscape for this session. */
+export function setKeepPortrait(value: boolean): void {
+  keepPortrait = value;
+}
+
+/**
+ * Smartphone immersive mode: the first tap anywhere asks for fullscreen and locks landscape, so the phone
+ * switches to the landscape fullscreen view immediately. Browsers only allow both from a user gesture, which
+ * is why this listens for the first touch instead of running on load. Elements marked `data-keep-portrait`
+ * (the "Continue in Portrait" button) opt out. Gives up after 3 refused attempts (e.g. iOS Safari).
+ */
+export function useSmartphoneImmersive(): void {
+  const { isSmartphone } = useViewportMode();
+  useEffect(() => {
+    if (!isSmartphone) return;
+    let attempts = 0;
+    const onGesture = (event: Event) => {
+      if (keepPortrait || attempts >= 3) return;
+      const target = event.target as Element | null;
+      if (target?.closest?.('[data-keep-portrait]')) return;
+      const landscape = window.screen?.orientation?.type?.startsWith('landscape') ?? window.innerWidth > window.innerHeight;
+      if (document.fullscreenElement && landscape) return;
+      attempts += 1;
+      void enableRotateScreen(true);
+    };
+    // pointerup is an activation-triggering event for touch, so requestFullscreen is allowed inside it
+    window.addEventListener('pointerup', onGesture, true);
+    return () => window.removeEventListener('pointerup', onGesture, true);
+  }, [isSmartphone]);
+}
+
 type LockableOrientation = ScreenOrientation & { lock?: (mode: 'landscape') => Promise<void> };
 
 /**

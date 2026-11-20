@@ -94,38 +94,106 @@ async function verifySplitLeftPanels(page, label) {
   assert.ok(await isShown(page, 'info-panel-level'), `[${label}] Info panel must return when switched ON`);
 }
 
-/** Rotate prompt is for smartphones only: real phone emulation (touch + small physical screen). */
+/**
+ * Mimics the browser rule that matters: orientation.lock() only succeeds while the page is fullscreen,
+ * and requestFullscreen() only succeeds inside a user gesture. Records every call for assertions.
+ */
+const FULLSCREEN_LOCK_STUB = `
+  (() => {
+    window.__fsCalls = 0; window.__lockCalls = []; window.__lockOk = 0; let fs = false;
+    const gesture = () => navigator.userActivation ? navigator.userActivation.isActive : true;
+    Element.prototype.requestFullscreen = function () {
+      window.__fsCalls += 1;
+      if (!gesture()) return Promise.reject(new Error('NotAllowedError: needs user gesture'));
+      fs = true;
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => document.documentElement });
+      return Promise.resolve();
+    };
+    window.screen.orientation.lock = function (mode) {
+      window.__lockCalls.push(mode);
+      if (!fs) return Promise.reject(new Error('NotSupportedError: lock needs fullscreen'));
+      window.__lockOk += 1; return Promise.resolve();
+    };
+  })();
+`;
+
+/** Smartphone: portrait shows the prompt; the first tap goes fullscreen + landscape lock; opt-out is respected. */
 async function verifySmartphoneRotateFlow(browser, baseUrl) {
-  const phone = await browser.newContext({
+  const phoneOpts = {
     viewport: { width: 390, height: 844 },
     screen: { width: 390, height: 844 },
     isMobile: true,
     hasTouch: true,
-  });
+  };
+
+  // A. Tap anywhere on the prompt -> fullscreen requested, then landscape locked
+  const phone = await browser.newContext(phoneOpts);
   const p = await phone.newPage();
+  await p.addInitScript(FULLSCREEN_LOCK_STUB);
   await p.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
   await p.waitForTimeout(600);
-  assert.ok(await isShown(p, 'rotate-to-landscape-overlay'), 'Smartphone portrait must show Rotate-to-Landscape overlay');
+  assert.ok(await isShown(p, 'rotate-to-landscape-overlay'), 'Smartphone portrait must show the rotate prompt');
+  const beforeTap = await p.evaluate(() => ({ fs: window.__fsCalls, lockOk: window.__lockOk, lock: window.__lockCalls }));
+  assert.equal(beforeTap.fs, 0, 'No fullscreen request without a user gesture');
+  assert.equal(beforeTap.lockOk, 0, 'Orientation lock must not succeed before fullscreen');
 
+  await p.getByTestId('rotate-to-landscape-overlay').locator('h2').tap();
+  await p.waitForTimeout(400);
+  const afterTap = await p.evaluate(() => ({ fs: window.__fsCalls, lockOk: window.__lockOk, lock: window.__lockCalls }));
+  assert.ok(afterTap.fs >= 1, 'First tap must request fullscreen');
+  assert.ok(afterTap.lockOk >= 1 && afterTap.lock.at(-1) === 'landscape', 'First tap must lock landscape orientation');
+
+  // The device then rotates: prompt disappears and the game is usable
   await p.setViewportSize({ width: 844, height: 390 });
   await p.waitForTimeout(300);
-  assert.equal(await isShown(p, 'rotate-to-landscape-overlay'), false, 'Smartphone landscape must hide the overlay');
-
-  await p.setViewportSize({ width: 390, height: 844 });
-  await p.waitForTimeout(300);
-  assert.ok(await isShown(p, 'rotate-to-landscape-overlay'), 'Turning the phone back to portrait must prompt again');
-  await p.getByTestId('rotate-landscape-btn').click();
-  await p.waitForTimeout(400);
-  // Headless Chromium cannot lock orientation, so the manual-rotate hint must appear instead of failing silently
-  const stillPortraitOverlay = await isShown(p, 'rotate-to-landscape-overlay');
-  if (stillPortraitOverlay) {
-    const hint = await p.locator('[data-testid="rotate-to-landscape-overlay"]').innerText();
-    assert.match(hint, /rotate|rotasi/i);
-    await p.getByTestId('continue-portrait-btn').click();
-    await p.waitForTimeout(150);
-    assert.equal(await isShown(p, 'rotate-to-landscape-overlay'), false, 'Continue in Portrait must dismiss overlay');
-  }
+  assert.equal(await isShown(p, 'rotate-to-landscape-overlay'), false, 'Landscape must hide the prompt');
   await phone.close();
+
+  // B. Browser refuses fullscreen (iPhone Safari): manual-rotate hint, never a silent failure
+  const iphone = await browser.newContext(phoneOpts);
+  const ip = await iphone.newPage();
+  await ip.addInitScript(`
+    window.__fsCalls = 0;
+    Element.prototype.requestFullscreen = undefined;
+    window.screen.orientation.lock = undefined;
+  `);
+  await ip.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await ip.waitForTimeout(600);
+  await ip.getByTestId('rotate-landscape-btn').tap();
+  await ip.waitForTimeout(300);
+  assert.match(await ip.getByTestId('rotate-to-landscape-overlay').innerText(), /Home Screen|Layar Utama/i);
+  await iphone.close();
+
+  // C. "Continue in Portrait" opts out: no fullscreen/lock on this or later taps
+  const keep = await browser.newContext(phoneOpts);
+  const kp = await keep.newPage();
+  await kp.addInitScript(FULLSCREEN_LOCK_STUB);
+  await kp.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await kp.waitForTimeout(600);
+  await kp.getByTestId('continue-portrait-btn').tap();
+  await kp.waitForTimeout(250);
+  assert.equal(await isShown(kp, 'rotate-to-landscape-overlay'), false, 'Continue in Portrait must dismiss the prompt');
+  await kp.mouse.click(200, 400);
+  await kp.waitForTimeout(250);
+  assert.equal(await kp.evaluate(() => window.__fsCalls), 0, 'Opting out of landscape must not trigger fullscreen');
+  await keep.close();
+
+  // D. A phone already in landscape still goes fullscreen on its first tap
+  const land = await browser.newContext({
+    viewport: { width: 844, height: 390 },
+    screen: { width: 844, height: 390 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const lp = await land.newPage();
+  await lp.addInitScript(FULLSCREEN_LOCK_STUB);
+  await lp.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await lp.waitForTimeout(600);
+  assert.equal(await isShown(lp, 'rotate-to-landscape-overlay'), false);
+  await lp.mouse.click(420, 200);
+  await lp.waitForTimeout(250);
+  assert.ok((await lp.evaluate(() => window.__fsCalls)) >= 1, 'Landscape smartphone must go fullscreen on first tap');
+  await land.close();
 
   const tablet = await browser.newContext({
     viewport: { width: 768, height: 1024 },

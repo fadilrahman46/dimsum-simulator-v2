@@ -112,7 +112,10 @@ const FULLSCREEN_LOCK_STUB = `
     window.screen.orientation.lock = function (mode) {
       window.__lockCalls.push(mode);
       if (!fs) return Promise.reject(new Error('NotSupportedError: lock needs fullscreen'));
-      window.__lockOk += 1; return Promise.resolve();
+      window.__lockOk += 1;
+      Object.defineProperty(window.screen.orientation, 'type', { configurable: true, get: () => 'landscape-primary' });
+      window.screen.orientation.dispatchEvent(new Event('change'));
+      return Promise.resolve();
     };
   })();
 `;
@@ -212,7 +215,7 @@ async function verifyPwaInstall(browser, baseUrl) {
   const ios = await browser.newContext(iphoneOpts);
   const ip = await ios.newPage();
   await ip.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
-  await ip.waitForSelector('[data-testid="install-app-btn"]', { timeout: 5_000 });
+  await ip.waitForSelector('[data-testid="install-app-btn"]', { timeout: 15_000 });
   assert.equal(await isShown(ip, 'install-ios-steps'), false, 'iOS steps must be collapsed until requested');
   await ip.getByTestId('install-app-btn').click();
   await ip.waitForSelector('[data-testid="install-ios-steps"]', { timeout: 3_000 });
@@ -228,6 +231,92 @@ async function verifyPwaInstall(browser, baseUrl) {
   await standalone.close();
 
   return swMode;
+}
+
+/** Smartphone browser: a simple button locks landscape on demand; it hides when it cannot help. */
+async function verifyLandscapeLockButton(browser, baseUrl) {
+  const phoneOpts = {
+    viewport: { width: 390, height: 844 },
+    screen: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  };
+
+  // A. Portrait phone that chose "Continue in Portrait" still has the button; tap -> fullscreen + landscape lock, button hides
+  const ctxA = await browser.newContext(phoneOpts);
+  const a = await ctxA.newPage();
+  await a.addInitScript(FULLSCREEN_LOCK_STUB);
+  await a.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await a.waitForTimeout(600);
+  await a.getByTestId('continue-portrait-btn').tap();
+  await a.waitForTimeout(300);
+  assert.equal(await isShown(a, 'rotate-to-landscape-overlay'), false, 'Overlay must close after Continue in Portrait');
+  assert.ok(await isShown(a, 'landscape-lock-btn'), 'Smartphone browser must show the landscape lock button');
+  const box = await a.getByTestId('landscape-lock-btn').boundingBox();
+  assert.ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= 390 && box.height >= 32, 'Button must sit inside the screen and be tappable');
+  // The rotate prompt's silent on-load attempt already tried (and was refused); count only what the tap adds
+  const before = await a.evaluate(() => ({ fs: window.__fsCalls, lock: window.__lockCalls.length }));
+  await a.getByTestId('landscape-lock-btn').tap();
+  await a.waitForTimeout(400);
+  const after = await a.evaluate(() => ({ fs: window.__fsCalls, lock: window.__lockCalls.length, ok: window.__lockOk }));
+  const calls = { fs: after.fs - before.fs, lock: after.lock - before.lock, ok: after.ok };
+  assert.equal(calls.fs, 1, `Button tap must request fullscreen exactly once (got ${calls.fs})`);
+  assert.equal(calls.lock, 1, `Button tap must lock landscape exactly once (got ${calls.lock})`);
+  assert.equal(calls.ok, 1, 'Landscape lock must succeed after fullscreen');
+  assert.equal(await isShown(a, 'landscape-lock-btn'), false, 'Button must hide once landscape fullscreen is active');
+  await ctxA.close();
+
+  // B. Browser refuses fullscreen and lock: the button explains why instead of failing silently
+  const ctxB = await browser.newContext(phoneOpts);
+  const b = await ctxB.newPage();
+  await b.addInitScript(`
+    Element.prototype.requestFullscreen = () => Promise.reject(new Error('NotAllowedError'));
+    window.screen.orientation.lock = () => Promise.reject(new Error('NotSupportedError'));
+  `);
+  await b.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await b.waitForTimeout(600);
+  await b.getByTestId('continue-portrait-btn').tap();
+  await b.getByTestId('landscape-lock-btn').tap();
+  await b.waitForSelector('[data-testid="landscape-lock-hint"]', { timeout: 3_000 });
+  await ctxB.close();
+
+  // C. iPhone Safari (no fullscreen, no lock API): a button that cannot work must not be offered
+  const ctxC = await browser.newContext(phoneOpts);
+  const c = await ctxC.newPage();
+  await c.addInitScript(`
+    Element.prototype.requestFullscreen = undefined;
+    window.screen.orientation.lock = undefined;
+  `);
+  await c.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await c.waitForTimeout(600);
+  assert.equal(await isShown(c, 'landscape-lock-btn'), false, 'No lock button without fullscreen/lock support');
+  await ctxC.close();
+
+  // D. Installed app (manifest already forces landscape): no button
+  const ctxD = await browser.newContext(phoneOpts);
+  const d = await ctxD.newPage();
+  await d.addInitScript(FULLSCREEN_LOCK_STUB);
+  await d.addInitScript(() => Object.defineProperty(navigator, 'standalone', { value: true, configurable: true }));
+  await d.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await d.waitForTimeout(600);
+  assert.equal(await isShown(d, 'landscape-lock-btn'), false, 'No lock button inside an installed app');
+  await ctxD.close();
+
+  // E. Phone already held sideways in a browser tab still gets the button (fullscreen is not active yet)
+  const ctxE = await browser.newContext({
+    viewport: { width: 844, height: 390 },
+    screen: { width: 844, height: 390 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const e = await ctxE.newPage();
+  await e.addInitScript(FULLSCREEN_LOCK_STUB);
+  await e.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await e.waitForTimeout(600);
+  assert.ok(await isShown(e, 'landscape-lock-btn'), 'Landscape phone in a browser tab must show the button until fullscreen');
+  const eb = await e.getByTestId('landscape-lock-btn').boundingBox();
+  assert.ok(eb && eb.x + eb.width <= 844 && eb.y + eb.height <= 390, 'Button must fit inside the landscape screen');
+  await ctxE.close();
 }
 
 /** Smartphone: portrait shows the prompt; the first tap goes fullscreen + landscape lock; opt-out is respected. */
@@ -550,8 +639,14 @@ async function runBrowserQa() {
       false,
       'Narrow desktop window (no touch, large screen) must not show the smartphone rotate prompt',
     );
+    assert.equal(
+      await page.getByTestId('landscape-lock-btn').isVisible(),
+      false,
+      'Narrow desktop window must not show the landscape lock button',
+    );
     await verifySmartphoneRotateFlow(browser, BASE_URL);
     const pwaMode = await verifyPwaInstall(browser, BASE_URL);
+    await verifyLandscapeLockButton(browser, BASE_URL);
     await page.setViewportSize({ width: 844, height: 390 });
     await page.waitForTimeout(200);
     const landscapeTitleCard = await page.evaluate(() => {

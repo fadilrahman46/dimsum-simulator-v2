@@ -81,7 +81,7 @@ export function useSmartphoneImmersive(): void {
     const onGesture = (event: Event) => {
       if (keepPortrait || attempts >= 3) return;
       const target = event.target as Element | null;
-      if (target?.closest?.('[data-keep-portrait]')) return;
+      if (target?.closest?.('[data-keep-portrait], [data-immersive-control]')) return;
       const landscape = window.screen?.orientation?.type?.startsWith('landscape') ?? window.innerWidth > window.innerHeight;
       if (document.fullscreenElement && landscape) return;
       attempts += 1;
@@ -119,6 +119,39 @@ export async function enableRotateScreen(allowFullscreen: boolean): Promise<bool
     // Not allowed outside fullscreen/PWA (or unsupported, e.g. iOS Safari)
   }
   return false;
+}
+
+/** The browser exposes at least one way to go landscape (fullscreen or orientation lock). False on iPhone Safari. */
+export function canTryLandscapeLock(): boolean {
+  if (typeof document === 'undefined') return false;
+  const orientation = window.screen?.orientation as LockableOrientation | undefined;
+  return typeof document.documentElement.requestFullscreen === 'function' || typeof orientation?.lock === 'function';
+}
+
+/** True while the screen is already landscape and fullscreen (the state the lock produces). */
+export function isLandscapeFullscreen(): boolean {
+  if (typeof document === 'undefined') return false;
+  const type = window.screen?.orientation?.type;
+  const landscape = type ? type.startsWith('landscape') : window.innerWidth > window.innerHeight;
+  return Boolean(document.fullscreenElement) && landscape;
+}
+
+/** Re-renders when fullscreen or orientation changes, so UI can follow the landscape lock state. */
+export function useLandscapeFullscreen(): boolean {
+  const [state, setState] = useState(isLandscapeFullscreen);
+  useEffect(() => {
+    const update = () => setState(isLandscapeFullscreen());
+    document.addEventListener('fullscreenchange', update);
+    window.addEventListener('resize', update);
+    window.screen?.orientation?.addEventListener?.('change', update);
+    update();
+    return () => {
+      document.removeEventListener('fullscreenchange', update);
+      window.removeEventListener('resize', update);
+      window.screen?.orientation?.removeEventListener?.('change', update);
+    };
+  }, []);
+  return state;
 }
 
 export function useViewportMode(): ViewportMode {

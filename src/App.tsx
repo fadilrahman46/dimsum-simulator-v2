@@ -11,6 +11,7 @@ import { PackagingModal } from './components/PackagingModal';
 import { GameOverModal, PauseModal } from './components/PauseAndEndModals';
 import { QualityControlModal } from './components/QualityControlModal';
 import { RecipeBookModal } from './components/RecipeBookModal';
+import { LandscapeLockButton } from './components/LandscapeLockButton';
 import { RotateToLandscapeOverlay } from './components/RotateToLandscapeOverlay';
 import { TitleScreen } from './components/TitleScreen';
 import { DimsumWorldCanvas, type JoystickInputRef } from './game/DimsumWorldCanvas';
@@ -68,6 +69,9 @@ export default function App() {
       {/* System Modals */}
       {gameState === 'GAME_PAUSED' && <PauseModal />}
       {gameState === 'GAME_OVER' && <GameOverModal />}
+
+      {/* Smartphone browser: one-tap fullscreen + landscape lock */}
+      <LandscapeLockButton />
 
       {/* Mobile Portrait Rotate-to-Landscape Prompt */}
       <RotateToLandscapeOverlay />

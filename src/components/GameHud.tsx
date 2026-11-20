@@ -152,7 +152,7 @@ export const GameHud: React.FC<GameHudProps> = ({ joystickRef }) => {
     const nextCompact = !compactHud;
     setCompactHud(nextCompact);
     if (!nextCompact) {
-      setShowLeftPanel(true);
+      setShowInfoPanel(true);
     }
     setShowMissionsWidget(!nextCompact);
     setShowGoalsWidget(!nextCompact);

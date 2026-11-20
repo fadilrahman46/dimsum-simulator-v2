@@ -319,6 +319,48 @@ async function verifyLandscapeLockButton(browser, baseUrl) {
   await ctxE.close();
 }
 
+/** HUD toggles must never throw: regression for "setShowLeftPanel is not defined" on the Compact HUD button. */
+async function verifyHudToggles(browser, baseUrl) {
+  const profiles = [
+    { label: 'phone-landscape', opts: { viewport: { width: 844, height: 390 }, screen: { width: 844, height: 390 }, isMobile: true, hasTouch: true } },
+    { label: 'desktop', opts: { viewport: { width: 1280, height: 720 } } },
+  ];
+  for (const { label, opts } of profiles) {
+    const ctx = await browser.newContext(opts);
+    const pg = await ctx.newPage();
+    const pageErrors = [];
+    pg.on('pageerror', (err) => pageErrors.push(String(err)));
+    await pg.addInitScript(FULLSCREEN_LOCK_STUB);
+    await pg.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+    await pg.getByRole('button', { name: /Start New Business/i }).click();
+    await pg.getByRole('button', { name: /Open Kitchen & Begin Day 1/i }).click();
+    await pg.waitForTimeout(800);
+    const skip = pg.getByRole('button', { name: /^Skip$/i });
+    if (await skip.count()) await skip.first().click();
+
+    const compact = pg.getByRole('button', { name: /Toggle Compact HUD/i });
+    const before = await compact.getAttribute('aria-pressed');
+    await compact.click();
+    await pg.waitForTimeout(250);
+    const after = await compact.getAttribute('aria-pressed');
+    assert.notEqual(before, after, `[${label}] Compact HUD button must flip its pressed state`);
+    await compact.click();
+    await pg.waitForTimeout(250);
+    assert.equal(await compact.getAttribute('aria-pressed'), before, `[${label}] Compact HUD button must flip back`);
+
+    // Every other always-visible HUD toggle must also respond without throwing
+    for (const name of [/Info Panel/i, /Minimize Daily Missions|Expand Daily Missions/i, /Minimize Daily Goals|Expand Daily Goals/i, /Toggle Sound/i]) {
+      const el = pg.getByRole('button', { name }).first();
+      if (await el.count()) {
+        await el.click();
+        await pg.waitForTimeout(150);
+      }
+    }
+    assert.deepEqual(pageErrors, [], `[${label}] HUD toggles threw: ${pageErrors.join(' | ')}`);
+    await ctx.close();
+  }
+}
+
 /** Smartphone: portrait shows the prompt; the first tap goes fullscreen + landscape lock; opt-out is respected. */
 async function verifySmartphoneRotateFlow(browser, baseUrl) {
   const phoneOpts = {
@@ -647,6 +689,7 @@ async function runBrowserQa() {
     await verifySmartphoneRotateFlow(browser, BASE_URL);
     const pwaMode = await verifyPwaInstall(browser, BASE_URL);
     await verifyLandscapeLockButton(browser, BASE_URL);
+    await verifyHudToggles(browser, BASE_URL);
     await page.setViewportSize({ width: 844, height: 390 });
     await page.waitForTimeout(200);
     const landscapeTitleCard = await page.evaluate(() => {

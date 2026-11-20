@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
-import { Globe, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Download, Globe, Play, RotateCcw, Share, Volume2, VolumeX } from 'lucide-react';
 import { t } from '../i18n/translations';
 import { useGameStore } from '../store/useGameStore';
+import { usePwaInstall } from '../utils/usePwaInstall';
 
 export const TitleScreen: React.FC = () => {
   const language = useGameStore((s) => s.language);
@@ -10,6 +11,8 @@ export const TitleScreen: React.FC = () => {
   const goToBusinessSetup = useGameStore((s) => s.goToBusinessSetup);
   const continueSavedGame = useGameStore((s) => s.continueSavedGame);
   const toggleLanguage = useGameStore((s) => s.toggleLanguage);
+  const { canInstall, needsManualIosInstall, install } = usePwaInstall();
+  const [showIosSteps, setShowIosSteps] = useState(false);
   const toggleMute = useGameStore((s) => s.toggleMute);
 
   useEffect(() => {
@@ -119,7 +122,31 @@ export const TitleScreen: React.FC = () => {
             {hasSavedGame ? <RotateCcw className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
             <span>{t(language, 'Start New Business', 'Mulai Bisnis Baru')}</span>
           </button>
+          {(canInstall || needsManualIosInstall) && (
+            <button
+              type="button"
+              data-testid="install-app-btn"
+              onClick={() => (canInstall ? void install() : setShowIosSteps((v) => !v))}
+              className="inline-flex items-center gap-2 px-4 py-2.5 sm:px-5 sm:py-3 [@media(max-height:520px)]:py-2 rounded-xl bg-white border border-[#244D3B]/25 hover:bg-[#D9E8C8]/60 text-[#244D3B] font-semibold text-xs sm:text-sm transition-transform active:scale-[0.98] whitespace-nowrap cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              <span>{t(language, 'Install App', 'Pasang Aplikasi')}</span>
+            </button>
+          )}
         </div>
+        {!canInstall && needsManualIosInstall && showIosSteps && (
+          <p
+            data-testid="install-ios-steps"
+            className="mt-2 max-w-md rounded-xl bg-[#FFF3DC] border border-[#ED9B53]/70 px-3 py-2 text-[11px] sm:text-xs font-medium text-[#92400E] leading-snug"
+          >
+            <Share className="inline w-3.5 h-3.5 -mt-0.5 mr-1" />
+            {t(
+              language,
+              'On iPhone/iPad: tap Share, then “Add to Home Screen”. The game opens fullscreen from the new icon.',
+              'Di iPhone/iPad: ketuk Bagikan, lalu “Tambah ke Layar Utama”. Game terbuka layar penuh dari ikon barunya.',
+            )}
+          </p>
+        )}
       </div>
 
       {/* Single flat control-hint line */}

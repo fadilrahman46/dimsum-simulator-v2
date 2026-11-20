@@ -117,6 +117,119 @@ const FULLSCREEN_LOCK_STUB = `
   })();
 `;
 
+/** PWA: manifest + icons valid, service worker caches for offline (production builds), Install App button flows. */
+async function verifyPwaInstall(browser, baseUrl) {
+  const isViteDev = await fetch(new URL('/@vite/client', baseUrl))
+    .then((r) => r.ok)
+    .catch(() => false);
+
+  // 1. Manifest and icons
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const page = await ctx.newPage();
+  await page.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  const manifestInfo = await page.evaluate(async () => {
+    const link = document.querySelector('link[rel="manifest"]');
+    if (!link) return { error: 'missing <link rel="manifest">' };
+    const res = await fetch(link.href);
+    const manifest = await res.json();
+    const icons = [];
+    for (const icon of manifest.icons ?? []) {
+      const r = await fetch(new URL(icon.src, link.href));
+      const blob = await r.blob();
+      const bmp = r.ok ? await createImageBitmap(blob) : null;
+      icons.push({ src: icon.src, sizes: icon.sizes, purpose: icon.purpose ?? 'any', ok: r.ok, type: blob.type, w: bmp?.width, h: bmp?.height });
+    }
+    const theme = document.querySelector('meta[name="theme-color"]')?.getAttribute('content');
+    const apple = document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href');
+    return { manifest, icons, theme, apple, startUrlOk: !!new URL(manifest.start_url, link.href) };
+  });
+  assert.ok(!manifestInfo.error, manifestInfo.error);
+  const m = manifestInfo.manifest;
+  assert.ok(m.name && m.short_name, 'Manifest needs name and short_name');
+  assert.equal(m.display, 'fullscreen', 'Manifest display must be fullscreen');
+  assert.equal(m.orientation, 'landscape', 'Manifest orientation must be landscape');
+  assert.ok(m.start_url && m.scope, 'Manifest needs start_url and scope');
+  for (const i of manifestInfo.icons) {
+    assert.ok(i.ok && i.type === 'image/png', `Icon ${i.src} must load as image/png`);
+    assert.equal(`${i.w}x${i.h}`, i.sizes, `Icon ${i.src} declared ${i.sizes} but is ${i.w}x${i.h}`);
+  }
+  const has = (size, purpose) => manifestInfo.icons.some((i) => i.sizes === size && i.purpose === purpose);
+  assert.ok(has('192x192', 'any') && has('512x512', 'any'), 'Manifest needs 192 and 512 "any" icons');
+  assert.ok(has('192x192', 'maskable') || has('512x512', 'maskable'), 'Manifest needs a maskable icon');
+  assert.ok(manifestInfo.theme && manifestInfo.apple, 'theme-color meta and apple-touch-icon link must exist');
+
+  // 2. Service worker script is served and parses; in production builds it must also take control and serve offline
+  const swText = await fetch(new URL('sw.js', baseUrl)).then((r) => r.text());
+  assert.doesNotThrow(() => new Function(swText), 'sw.js must be valid JavaScript');
+  let swMode = 'script-only (vite dev server does not register the worker)';
+  if (!isViteDev) {
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload({ waitUntil: 'load' }); // reload so the page is controlled and assets get cached
+    await page.waitForTimeout(500);
+    assert.ok(await page.evaluate(() => !!navigator.serviceWorker.controller), 'Service worker must control the page after reload');
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForTimeout(500);
+    await ctx.setOffline(true);
+    await page.reload({ waitUntil: 'load', timeout: 20_000 });
+    await page.waitForSelector('[data-testid="dimsum-world-canvas"] canvas', { timeout: 20_000 });
+    await ctx.setOffline(false);
+    swMode = 'registered, controlled, offline reload OK';
+  }
+  await ctx.close();
+
+  // 3. Install button: hidden until the browser offers installation, then calls prompt(), hides after appinstalled
+  const desk = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const dp = await desk.newPage();
+  await dp.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await dp.waitForTimeout(400);
+  assert.equal(await isShown(dp, 'install-app-btn'), false, 'Install button must stay hidden when the browser offers no install');
+  const prevented = await dp.evaluate(() => {
+    const e = new Event('beforeinstallprompt', { cancelable: true });
+    window.__installPromptCalls = 0;
+    e.prompt = () => { window.__installPromptCalls += 1; return Promise.resolve(); };
+    e.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+  assert.equal(prevented, true, 'beforeinstallprompt must be captured (default mini-infobar suppressed)');
+  await dp.waitForSelector('[data-testid="install-app-btn"]', { timeout: 3_000 });
+  await dp.getByTestId('install-app-btn').click();
+  await dp.waitForTimeout(200);
+  assert.equal(await dp.evaluate(() => window.__installPromptCalls), 1, 'Clicking Install App must call the deferred prompt() once');
+  await dp.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
+  await dp.waitForTimeout(200);
+  assert.equal(await isShown(dp, 'install-app-btn'), false, 'Install button must hide after appinstalled');
+  await desk.close();
+
+  // 4. iPhone (no beforeinstallprompt): manual Add to Home Screen steps; standalone launch hides the button
+  const iphoneOpts = {
+    viewport: { width: 844, height: 390 },
+    screen: { width: 844, height: 390 },
+    isMobile: true,
+    hasTouch: true,
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+  };
+  const ios = await browser.newContext(iphoneOpts);
+  const ip = await ios.newPage();
+  await ip.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await ip.waitForSelector('[data-testid="install-app-btn"]', { timeout: 5_000 });
+  assert.equal(await isShown(ip, 'install-ios-steps'), false, 'iOS steps must be collapsed until requested');
+  await ip.getByTestId('install-app-btn').click();
+  await ip.waitForSelector('[data-testid="install-ios-steps"]', { timeout: 3_000 });
+  assert.match(await ip.getByTestId('install-ios-steps').innerText(), /Layar Utama|Home Screen/, 'iOS steps must mention Home Screen');
+  await ios.close();
+
+  const standalone = await browser.newContext(iphoneOpts);
+  const sp = await standalone.newPage();
+  await sp.addInitScript(() => Object.defineProperty(navigator, 'standalone', { value: true, configurable: true }));
+  await sp.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+  await sp.waitForTimeout(500);
+  assert.equal(await isShown(sp, 'install-app-btn'), false, 'Install button must hide when already running as an installed app');
+  await standalone.close();
+
+  return swMode;
+}
+
 /** Smartphone: portrait shows the prompt; the first tap goes fullscreen + landscape lock; opt-out is respected. */
 async function verifySmartphoneRotateFlow(browser, baseUrl) {
   const phoneOpts = {
@@ -438,6 +551,7 @@ async function runBrowserQa() {
       'Narrow desktop window (no touch, large screen) must not show the smartphone rotate prompt',
     );
     await verifySmartphoneRotateFlow(browser, BASE_URL);
+    const pwaMode = await verifyPwaInstall(browser, BASE_URL);
     await page.setViewportSize({ width: 844, height: 390 });
     await page.waitForTimeout(200);
     const landscapeTitleCard = await page.evaluate(() => {
@@ -557,6 +671,7 @@ async function runBrowserQa() {
             before: { lanterns: statsBeforeUpgrade.lanternCount, plants: statsBeforeUpgrade.plantCount },
             after: { lanterns: statsAfterUpgrade.lanternCount, plants: statsAfterUpgrade.plantCount },
           },
+          pwa: pwaMode,
           viewportsAudited: viewports.map((v) => v.label),
         },
         null,

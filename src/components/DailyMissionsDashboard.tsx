@@ -14,6 +14,7 @@ import { formatRupiah } from '../config/gameBalance';
 import { t } from '../i18n/translations';
 import { useGameStore } from '../store/useGameStore';
 import type { DailyMission } from '../types/game';
+import { useViewportMode } from '../utils/useViewportMode';
 
 export interface DailyMissionsDashboardProps {
   variant?: 'dashboard' | 'compact';
@@ -45,6 +46,7 @@ export const DailyMissionsDashboard: React.FC<DailyMissionsDashboardProps> = ({
   const dailyMissions = useGameStore((s) => s.dailyMissions);
   const claimDailyMission = useGameStore((s) => s.claimDailyMission);
   const claimAllDailyMissions = useGameStore((s) => s.claimAllDailyMissions);
+  const { isTinyLandscape: tiny } = useViewportMode();
 
   if (dailyMissions.length === 0) {
     if (variant === 'compact') {
@@ -79,7 +81,11 @@ export const DailyMissionsDashboard: React.FC<DailyMissionsDashboardProps> = ({
     return (
       <div
         data-testid="daily-missions-card"
-        className="pointer-events-auto w-68 sm:w-80 [@media(max-height:520px)]:w-60 [@media(max-height:520px)]:sm:w-68 rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-sm px-3.5 py-2.5 text-xs"
+        className={`pointer-events-auto rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-sm ${
+          tiny
+            ? 'w-56 px-2.5 py-1.5 text-[10px] leading-snug'
+            : 'w-68 sm:w-80 [@media(max-height:520px)]:w-60 [@media(max-height:520px)]:sm:w-68 px-3.5 py-2.5 text-xs'
+        }`}
       >
         <div className="flex items-center justify-between gap-2">
           <button
@@ -134,7 +140,7 @@ export const DailyMissionsDashboard: React.FC<DailyMissionsDashboardProps> = ({
               onClick={onOpenDashboard}
               title={t(language, 'Open Missions Dashboard', 'Buka Dasbor Misi')}
               aria-label={t(language, 'Open Missions Dashboard', 'Buka Dasbor Misi')}
-              className="inline-flex items-center justify-center w-6 h-6 rounded border border-[#244D3B]/15 bg-[#F6EBD4]/80 hover:bg-[#D9E8C8] text-[#244D3B] cursor-pointer shrink-0"
+              className={`inline-flex items-center justify-center ${tiny ? 'w-7 h-7' : 'w-6 h-6'} rounded border border-[#244D3B]/15 bg-[#F6EBD4]/80 hover:bg-[#D9E8C8] text-[#244D3B] cursor-pointer shrink-0`}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
             </button>
@@ -142,16 +148,66 @@ export const DailyMissionsDashboard: React.FC<DailyMissionsDashboardProps> = ({
         </div>
 
         {expanded && (
-          <div className="mt-2 space-y-1.5">
+          <div className={tiny ? 'mt-1 space-y-1' : 'mt-2 space-y-1.5'}>
             {dailyMissions.map((mission) => {
               const pct = getMissionProgressPct(mission);
               const progressLabel = getMissionProgressLabel(mission, language);
               const isClaimable = mission.completed && !mission.claimed;
 
+              if (tiny) {
+                // Phone landscape: one line per mission (title, count, reward) with a hairline progress bar
+                const shortProgress =
+                  mission.type === 'EARN_REVENUE' ? `${pct}%` : `${mission.current}/${mission.target}`;
+                return (
+                  <div
+                    key={mission.id}
+                    className={`relative overflow-hidden flex items-center gap-1.5 rounded-md pl-2 pr-1 min-h-7 border ${
+                      mission.claimed
+                        ? 'bg-[#D9E8C8]/65 border-[#6E9B72]/50'
+                        : isClaimable
+                          ? 'bg-[#FFF5E1] border-[#ED9B53]'
+                          : 'bg-[#F6EBD4]/60 border-[#244D3B]/10'
+                    }`}
+                  >
+                    <span className="flex-1 min-w-0 truncate font-semibold text-[#244D3B]">
+                      {language === 'id' ? mission.titleId : mission.titleEn}
+                    </span>
+                    {!isClaimable && (
+                      <span className="shrink-0 font-mono tabular-nums text-[#587567]">{shortProgress}</span>
+                    )}
+                    {isClaimable ? (
+                      <button
+                        type="button"
+                        onClick={() => claimDailyMission(mission.id)}
+                        className="shrink-0 inline-flex items-center gap-1 px-1.5 h-6 rounded bg-[#ED9B53] hover:bg-[#E08A3C] text-[#1C3529] font-bold font-mono tabular-nums cursor-pointer whitespace-nowrap"
+                      >
+                        <Gift className="w-3 h-3" />
+                        <span>
+                          {t(language, 'Claim', 'Klaim')} +{formatRupiah(mission.rewardCash)}
+                        </span>
+                      </button>
+                    ) : mission.claimed ? (
+                      <CheckCircle2 className="w-3 h-3 shrink-0 text-[#244D3B]" aria-label={t(language, 'Claimed', 'Diklaim')} />
+                    ) : (
+                      <span className="shrink-0 font-mono tabular-nums font-bold text-[#92400E] whitespace-nowrap">
+                        +{formatRupiah(mission.rewardCash)}
+                      </span>
+                    )}
+                    <div
+                      aria-hidden="true"
+                      className={`absolute bottom-0 left-0 h-0.5 ${
+                        mission.claimed ? 'bg-[#244D3B]' : isClaimable ? 'bg-[#ED9B53]' : 'bg-[#6E9B72]'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={mission.id}
-                  className={`rounded-lg px-2.5 py-2 border ${
+                  className={`rounded-lg ${tiny ? 'px-2 py-1' : 'px-2.5 py-2'} border ${
                     mission.claimed
                       ? 'bg-[#D9E8C8]/65 border-[#6E9B72]/50'
                       : isClaimable
@@ -187,7 +243,7 @@ export const DailyMissionsDashboard: React.FC<DailyMissionsDashboardProps> = ({
                       </span>
                     )}
                   </div>
-                  <div className="mt-1.5 flex items-center gap-2">
+                  <div className={`${tiny ? 'mt-0.5' : 'mt-1.5'} flex items-center gap-2`}>
                     <div className="h-1 flex-1 rounded-sm bg-[#E9DEC8] overflow-hidden">
                       <div
                         className={`h-full transition-all duration-200 ${

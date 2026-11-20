@@ -6,6 +6,11 @@ export interface ViewportMode {
   isTouchDevice: boolean;
   isMobilePortrait: boolean;
   isShortLandscape: boolean;
+  /**
+   * Phone held sideways (viewport height <= 440 CSS px: 800x360, 844x390, 915x412 ...). HUD panels, buttons and
+   * the joystick switch to their smallest footprint here so the 3D scene stays visible.
+   */
+  isTinyLandscape: boolean;
   isCompactViewport: boolean;
   /** Touch device whose physical screen short side is below 600 CSS px (phones; excludes tablets & desktops). */
   isSmartphone: boolean;
@@ -24,6 +29,7 @@ function readViewportMode(): ViewportMode {
       isTouchDevice: false,
       isMobilePortrait: false,
       isShortLandscape: false,
+      isTinyLandscape: false,
       isCompactViewport: false,
       isSmartphone: false,
       isSmartphonePortrait: false,
@@ -39,6 +45,7 @@ function readViewportMode(): ViewportMode {
 
   const isMobilePortrait = width < 640 && height > width;
   const isShortLandscape = width >= 560 && width > height && height <= 520;
+  const isTinyLandscape = width > height && height <= 440;
   const isCompactViewport = isMobilePortrait || isShortLandscape || width < 640;
 
   // Device class is judged from the physical screen, not the window, so a narrowed desktop window is never a phone
@@ -55,6 +62,7 @@ function readViewportMode(): ViewportMode {
     isTouchDevice,
     isMobilePortrait,
     isShortLandscape,
+    isTinyLandscape,
     isCompactViewport,
     isSmartphone,
     isSmartphonePortrait,

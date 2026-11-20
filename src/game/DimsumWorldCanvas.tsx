@@ -101,7 +101,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
   const activeStation = useGameStore((s) => s.activeStation);
   const activeCooking = useGameStore((s) => s.activeCooking);
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const { width: viewportWidth, isShortLandscape } = useViewportMode();
+  const { width: viewportWidth, isShortLandscape, isTinyLandscape } = useViewportMode();
   const [contextLost, setContextLost] = useState(false);
   const [stationTag, setStationTag] = useState<FloatingTag | null>(null);
   const [customerBubbles, setCustomerBubbles] = useState<CustomerThoughtBubble[]>([]);
@@ -1298,7 +1298,9 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
         <div
           data-testid="camera-controls-bar"
           className={`absolute z-20 flex items-center rounded-xl bg-[#FAF5EA] border border-[#244D3B]/20 shadow-md text-[#244D3B] ${
-            isShortLandscape
+            isTinyLandscape
+              ? 'bottom-1 right-1.5 gap-1 px-1.5 py-1'
+              : isShortLandscape
               ? 'bottom-2 right-2 gap-0.5 px-1.5 py-1'
               : viewportWidth < 768
                 ? 'bottom-32 right-3 gap-1 px-2 py-1.5'
@@ -1313,7 +1315,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
             disabled={cameraUi.zoom <= CAMERA_ZOOM_BOUNDS.min + 0.01}
             title={t(language, 'Zoom Out (Mouse Wheel)', 'Perkecil (Roda Mouse)')}
             aria-label={t(language, 'Zoom Out', 'Perkecil Kamera')}
-            className={`${isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] disabled:opacity-40 flex items-center justify-center cursor-pointer`}
+            className={`${isTinyLandscape ? 'w-8 h-8' : isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] disabled:opacity-40 flex items-center justify-center cursor-pointer`}
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
@@ -1330,7 +1332,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
             disabled={cameraUi.zoom >= CAMERA_ZOOM_BOUNDS.max - 0.01}
             title={t(language, 'Zoom In (Mouse Wheel)', 'Perbesar (Roda Mouse)')}
             aria-label={t(language, 'Zoom In', 'Perbesar Kamera')}
-            className={`${isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] disabled:opacity-40 flex items-center justify-center cursor-pointer`}
+            className={`${isTinyLandscape ? 'w-8 h-8' : isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] disabled:opacity-40 flex items-center justify-center cursor-pointer`}
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
@@ -1344,7 +1346,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
               'Putar Kiri (atau Seret Klik Kanan)',
             )}
             aria-label={t(language, 'Rotate Camera Left', 'Putar Kamera Kiri')}
-            className={`${isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] flex items-center justify-center cursor-pointer`}
+            className={`${isTinyLandscape ? 'w-8 h-8' : isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] flex items-center justify-center cursor-pointer`}
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
@@ -1357,7 +1359,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
               'Putar Kanan (atau Seret Klik Kanan)',
             )}
             aria-label={t(language, 'Rotate Camera Right', 'Putar Kamera Kanan')}
-            className={`${isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] flex items-center justify-center cursor-pointer`}
+            className={`${isTinyLandscape ? 'w-8 h-8' : isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#F6EBD4] hover:bg-[#D9E8C8] flex items-center justify-center cursor-pointer`}
           >
             <RotateCw className="w-3.5 h-3.5" />
           </button>
@@ -1367,7 +1369,7 @@ export const DimsumWorldCanvas: React.FC<DimsumWorldCanvasProps> = ({ joystickRe
               onClick={resetCameraView}
               title={t(language, 'Reset Camera Angle', 'Reset Sudut Kamera')}
               aria-label={t(language, 'Reset Camera', 'Reset Kamera')}
-              className={`${isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#ED9B53] hover:bg-[#DF883D] text-[#1C3529] flex items-center justify-center cursor-pointer`}
+              className={`${isTinyLandscape ? 'w-8 h-8' : isShortLandscape ? 'w-6 h-6' : 'w-7 h-7'} rounded-lg bg-[#ED9B53] hover:bg-[#DF883D] text-[#1C3529] flex items-center justify-center cursor-pointer`}
             >
               <LocateFixed className="w-3.5 h-3.5" />
             </button>

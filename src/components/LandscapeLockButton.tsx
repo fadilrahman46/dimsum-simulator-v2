@@ -27,7 +27,7 @@ export const LandscapeLockButton: React.FC = () => {
       s.gameState === 'GAME_OVER' ||
       s.gameState === 'FINANCIAL_REPORT',
   );
-  const { isSmartphone } = useViewportMode();
+  const { isSmartphone, isTinyLandscape } = useViewportMode();
   const locked = useLandscapeFullscreen();
   const [failed, setFailed] = useState(false);
 
@@ -47,14 +47,14 @@ export const LandscapeLockButton: React.FC = () => {
   };
 
   return (
-    <div className="fixed z-40 top-14 right-2 flex flex-col items-end gap-1.5 pointer-events-none [padding-top:env(safe-area-inset-top)] [padding-right:env(safe-area-inset-right)]">
+    <div className={`fixed z-40 ${isTinyLandscape ? 'top-12' : 'top-14'} right-2 flex flex-col items-end gap-1.5 pointer-events-none [padding-top:env(safe-area-inset-top)] [padding-right:env(safe-area-inset-right)]`}>
       <button
         type="button"
         data-testid="landscape-lock-btn"
         data-immersive-control
         aria-label={t(language, 'Switch to landscape', 'Ubah ke layar horizontal')}
         onClick={handleClick}
-        className="pointer-events-auto inline-flex items-center gap-1.5 h-9 px-3 rounded-full bg-[#ED9B53] hover:bg-[#DF883D] active:scale-95 text-[#1C3529] text-xs font-bold shadow-md border border-[#244D3B]/25 cursor-pointer transition-transform"
+        className={`pointer-events-auto inline-flex items-center gap-1.5 ${isTinyLandscape ? 'h-8 px-2.5 text-[11px]' : 'h-9 px-3 text-xs'} rounded-full bg-[#ED9B53] hover:bg-[#DF883D] active:scale-95 text-[#1C3529] font-bold shadow-md border border-[#244D3B]/25 cursor-pointer transition-transform`}
       >
         <RotateCw className="w-4 h-4" />
         <span>{t(language, 'Landscape', 'Horizontal')}</span>

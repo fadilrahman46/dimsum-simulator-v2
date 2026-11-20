@@ -432,6 +432,68 @@ async function verifyMissionsDashboard(browser, baseUrl) {
   }
 }
 
+/**
+ * Phone landscape (800x360, 844x390): HUD cards must stay compact and the joystick must be thumb friendly
+ * (big touch zone, knob follows a real touch, steering stops on release).
+ */
+async function verifyPhoneLandscapeLayout(browser, baseUrl) {
+  for (const [w, h] of [[800, 360], [844, 390]]) {
+    const label = `${w}x${h}`;
+    const ctx = await browser.newContext({
+      viewport: { width: w, height: h },
+      screen: { width: w, height: h },
+      isMobile: true,
+      hasTouch: true,
+    });
+    const pg = await ctx.newPage();
+    const pageErrors = [];
+    pg.on('pageerror', (err) => pageErrors.push(String(err)));
+    await pg.addInitScript(FULLSCREEN_LOCK_STUB);
+    await pg.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+    await pg.getByRole('button', { name: /Start New Business/i }).click();
+    await pg.getByRole('button', { name: /Open Kitchen & Begin Day 1/i }).click();
+    await pg.waitForTimeout(800);
+    const skip = pg.getByRole('button', { name: /^Skip$/i });
+    if (await skip.count()) await skip.first().click();
+
+    // Expand both cards: they must stay small even when open
+    for (const testId of ['daily-missions-card', 'daily-goals-card']) {
+      const toggle = pg.getByTestId(testId).locator('button[aria-expanded]').first();
+      if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+    }
+    await pg.waitForTimeout(250);
+    const missions = await pg.getByTestId('daily-missions-card').boundingBox();
+    const goals = await pg.getByTestId('daily-goals-card').boundingBox();
+    assert.ok(missions && goals, `[${label}] cards must be visible`);
+    assert.ok(missions.width <= 232 && goals.width <= 232, `[${label}] cards must be at most 232px wide (got ${missions.width}/${goals.width})`);
+    assert.ok(missions.height <= 150, `[${label}] expanded Daily Missions must be at most 150px tall (got ${missions.height})`);
+
+    // Joystick: generous touch zone, visible knob, follows a real touch, resets on release
+    const zone = await pg.getByTestId('virtual-joystick').boundingBox();
+    assert.ok(zone && zone.width >= 110 && zone.height >= 110, `[${label}] joystick touch zone must be >= 110px (got ${zone?.width})`);
+    const knob = pg.locator('[data-testid="virtual-joystick"] > div > div');
+    const knobBox = await knob.boundingBox();
+    assert.ok(knobBox.width >= 38, `[${label}] joystick knob must be >= 38px (got ${knobBox.width})`);
+    const cdp = await ctx.newCDPSession(pg);
+    const cx = zone.x + zone.width / 2;
+    const cy = zone.y + zone.height / 2;
+    const knobShift = async () => {
+      const b = await knob.boundingBox();
+      return Math.hypot(b.x + b.width / 2 - cx, b.y + b.height / 2 - cy);
+    };
+    assert.ok((await knobShift()) < 2, `[${label}] knob must rest in the centre`);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cx - zone.width / 2 + 4, y: cy, id: 1 }] }); // edge of the zone, outside the circle
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: cx + 30, y: cy, id: 1 }] });
+    await pg.waitForTimeout(200);
+    assert.ok((await knobShift()) > 15, `[${label}] knob must follow the thumb`);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await pg.waitForTimeout(200);
+    assert.ok((await knobShift()) < 2, `[${label}] knob must return to the centre on release`);
+    assert.deepEqual(pageErrors, [], `[${label}] phone layout threw: ${pageErrors.join(' | ')}`);
+    await ctx.close();
+  }
+}
+
 /** Smartphone: portrait shows the prompt; the first tap goes fullscreen + landscape lock; opt-out is respected. */
 async function verifySmartphoneRotateFlow(browser, baseUrl) {
   const phoneOpts = {
@@ -762,6 +824,7 @@ async function runBrowserQa() {
     await verifyLandscapeLockButton(browser, BASE_URL);
     await verifyHudToggles(browser, BASE_URL);
     await verifyMissionsDashboard(browser, BASE_URL);
+    await verifyPhoneLandscapeLayout(browser, BASE_URL);
     await page.setViewportSize({ width: 844, height: 390 });
     await page.waitForTimeout(200);
     const landscapeTitleCard = await page.evaluate(() => {

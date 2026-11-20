@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CheckCircle2,
   ChevronDown,
@@ -376,20 +377,28 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
 
   useEffect(() => {
     if (!open) return;
+    // Capture phase + stopImmediatePropagation: the world canvas also listens for Escape
+    // (it toggles pause). Without this, Escape paused the game and the store update
+    // re-subscribed this effect mid-dispatch, so the dashboard itself never closed.
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
         onClose();
       }
     };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
+    window.addEventListener('keydown', handleKey, true);
+    return () => window.removeEventListener('keydown', handleKey, true);
   }, [open, onClose]);
 
   if (!open) return null;
 
-  return (
+  // Rendered through a portal: the HUD root is `pointer-events-none` and forms its own
+  // stacking context, so a modal nested inside it was click-through (Close and Claim
+  // buttons never received taps) and could be covered by other fixed controls.
+  return createPortal(
     <div
-      className="fixed inset-0 z-40 bg-[#1B3A2C]/55 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4"
+      className="pointer-events-auto fixed inset-0 z-[45] bg-[#1B3A2C]/55 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label={t(language, 'Daily Missions Dashboard', 'Dasbor Misi Harian')}
@@ -418,6 +427,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
           <DailyMissionsDashboard variant="dashboard" />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };

@@ -14,7 +14,7 @@ export const CustomerFeedbackPopups: React.FC = () => {
 
   return (
     <div
-      className="pointer-events-none fixed top-20 [@media(max-height:520px)]:top-14 right-3 md:right-5 z-40 flex flex-col items-end gap-2 max-w-[calc(100vw-1.5rem)]"
+      className="pointer-events-none fixed top-20 [@media(max-height:520px)]:top-14 right-3 md:right-5 z-[41] flex flex-col items-end gap-2 max-w-[calc(100vw-1.5rem)]"
       aria-live="polite"
     >
       {feedbackPopups.map((fb) => {

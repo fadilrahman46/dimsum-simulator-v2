@@ -361,6 +361,77 @@ async function verifyHudToggles(browser, baseUrl) {
   }
 }
 
+/**
+ * Daily Missions dashboard: the modal used to live inside the pointer-events-none HUD, so Close/Claim taps fell
+ * through to the canvas, and Escape paused the game instead of closing it. Station modals' Close buttons were
+ * also covered by the floating landscape-lock button on phones.
+ */
+async function verifyMissionsDashboard(browser, baseUrl) {
+  const profiles = [
+    { label: 'phone-landscape', opts: { viewport: { width: 844, height: 390 }, screen: { width: 844, height: 390 }, isMobile: true, hasTouch: true }, phone: true },
+    { label: 'desktop', opts: { viewport: { width: 1280, height: 720 } }, phone: false },
+  ];
+  for (const { label, opts, phone } of profiles) {
+    const ctx = await browser.newContext(opts);
+    const pg = await ctx.newPage();
+    const pageErrors = [];
+    pg.on('pageerror', (err) => pageErrors.push(String(err)));
+    await pg.addInitScript(FULLSCREEN_LOCK_STUB);
+    await pg.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
+    await pg.getByRole('button', { name: /Start New Business/i }).click();
+    await pg.getByRole('button', { name: /Open Kitchen & Begin Day 1/i }).click();
+    await pg.waitForTimeout(800);
+    const skip = pg.getByRole('button', { name: /^Skip$/i });
+    if (await skip.count()) await skip.first().click();
+
+    const dialog = pg.getByRole('dialog', { name: /Daily Missions Dashboard/i });
+    // Real pointer events at the element's centre (also proves nothing overlaps it)
+    const tapCentre = async (locator) => {
+      const box = await locator.boundingBox();
+      assert.ok(box, `[${label}] element must be visible`);
+      await pg.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await pg.waitForTimeout(250);
+    };
+    const openDashboard = async () => {
+      await pg.getByRole('button', { name: /Open Missions Dashboard/i }).first().click();
+      await pg.waitForTimeout(300);
+      assert.equal(await dialog.count(), 1, `[${label}] Missions dashboard must open`);
+    };
+
+    await openDashboard();
+    await tapCentre(dialog.getByRole('button', { name: /^Close$/i }));
+    assert.equal(await dialog.count(), 0, `[${label}] Close (X) must close the missions dashboard`);
+
+    await openDashboard();
+    await pg.keyboard.press('Escape');
+    await pg.waitForTimeout(250);
+    assert.equal(await dialog.count(), 0, `[${label}] Escape must close the missions dashboard`);
+    assert.equal(
+      await pg.getByRole('button', { name: /Resume/i }).count(),
+      0,
+      `[${label}] Escape on the dashboard must not pause the game`,
+    );
+
+    // Station modal Close must not be covered by the floating landscape button
+    await pg.getByRole('button', { name: /^Market$/i }).first().click();
+    await pg.waitForTimeout(500);
+    const closeMarket = pg.getByRole('button', { name: /Close Market/i });
+    if (await closeMarket.count()) {
+      const hit = await closeMarket.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!top && el.contains(top);
+      });
+      assert.ok(hit, `[${label}] Close Market must be the element under its own centre point`);
+      if (phone) {
+        assert.equal(await isShown(pg, 'landscape-lock-btn'), false, 'Landscape button must hide while a station modal is open');
+      }
+    }
+    assert.deepEqual(pageErrors, [], `[${label}] Missions dashboard flow threw: ${pageErrors.join(' | ')}`);
+    await ctx.close();
+  }
+}
+
 /** Smartphone: portrait shows the prompt; the first tap goes fullscreen + landscape lock; opt-out is respected. */
 async function verifySmartphoneRotateFlow(browser, baseUrl) {
   const phoneOpts = {
@@ -690,6 +761,7 @@ async function runBrowserQa() {
     const pwaMode = await verifyPwaInstall(browser, BASE_URL);
     await verifyLandscapeLockButton(browser, BASE_URL);
     await verifyHudToggles(browser, BASE_URL);
+    await verifyMissionsDashboard(browser, BASE_URL);
     await page.setViewportSize({ width: 844, height: 390 });
     await page.waitForTimeout(200);
     const landscapeTitleCard = await page.evaluate(() => {

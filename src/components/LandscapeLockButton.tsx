@@ -18,6 +18,15 @@ import {
  */
 export const LandscapeLockButton: React.FC = () => {
   const language = useGameStore((s) => s.language);
+  // Full-screen modals put their Close button in the same top-right corner as this floating button
+  const overlayOpen = useGameStore(
+    (s) =>
+      !!s.activeStation ||
+      !!s.activeCooking ||
+      s.gameState === 'GAME_PAUSED' ||
+      s.gameState === 'GAME_OVER' ||
+      s.gameState === 'FINANCIAL_REPORT',
+  );
   const { isSmartphone } = useViewportMode();
   const locked = useLandscapeFullscreen();
   const [failed, setFailed] = useState(false);
@@ -29,7 +38,7 @@ export const LandscapeLockButton: React.FC = () => {
     return () => window.clearTimeout(id);
   }, [failed]);
 
-  if (!isSmartphone || locked || isRunningAsInstalledApp() || !canTryLandscapeLock()) return null;
+  if (overlayOpen || !isSmartphone || locked || isRunningAsInstalledApp() || !canTryLandscapeLock()) return null;
 
   const handleClick = async () => {
     setKeepPortrait(false); // an earlier "Continue in Portrait" no longer applies
